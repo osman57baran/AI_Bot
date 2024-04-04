@@ -14,9 +14,12 @@ async def meme_at(cxt):
     f=open(secim,"rb")
     file=discord.File(f)
     await cxt.send(file=file)
-
 @bot.command()
-async def detect(ctx):
+async def komutlar(ctx):
+    await ctx.send("/meme_at(size rastgele meme göderir)
+    await ctx.send("(incele(gönderdiğiniz resimdeki kişinin cinsiyetini söyler")               
+@bot.command()
+async def incele(ctx):
     await ctx.send('Algılama başladı!')
     if ctx.message.attachments:
         await ctx.send("Resim bulundu")
