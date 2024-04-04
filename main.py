@@ -16,7 +16,7 @@ async def meme_at(cxt):
     await cxt.send(file=file)
 @bot.command()
 async def komutlar(ctx):
-    await ctx.send("/meme_at(size rastgele meme göderir)
+    await ctx.send("/meme_at(size rastgele meme göderir")
     await ctx.send("(incele(gönderdiğiniz resimdeki kişinin cinsiyetini söyler")               
 @bot.command()
 async def incele(ctx):
