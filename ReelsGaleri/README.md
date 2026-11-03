@@ -18,11 +18,12 @@ Galerindeki videolardan istediklerini seç, Instagram Reels gibi dikey kaydırar
   - Alttaki çizgiyi sürükle → videoyu ileri/geri sar (ortada süre görünür)
   - ❤ butonu → beğen / beğeniyi geri al
   - 💬 butonu → yorumları gör, yorum yaz; yoruma uzun bas → sil
-  - 🖼 **Galeri** butonu → videoyu telefonun galerisinde açar (oradan silebilirsin; geri dönünce silinen video akıştan kendiliğinden çıkar)
+  - 🗑 **Sil** butonu → videoyu uygulamanın içinden telefondan siler (Android onay sorar); video akıştan da çıkar
 - **Beğendiklerim**: Beğendiğin videolar ızgarada; birine dokununca o videodan itibaren kaydırmalı izleme açılır.
 - **Karışık sırayla oynat** anahtarı.
 
 ## Sürümler
+- **1.3** — "Galeri" butonu yerine uygulama içinden "Sil" butonu
 - **1.2** — beğenilenler ızgara görünümü, "Galeride aç" butonu, silinen videoların otomatik temizlenmesi
 - **1.1** — basılı tutunca 2x hız, sürüklenebilir zaman çizgisi, basılı tutunca duraklatma
 - **1.0** — ilk sürüm

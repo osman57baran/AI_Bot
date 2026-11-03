@@ -1,6 +1,16 @@
 package com.osman.reelsgaleri
 
+import android.Manifest
+import android.app.RecoverableSecurityException
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
+import androidx.core.content.ContextCompat
 import android.view.WindowManager
 import android.widget.TextView
 import android.widget.Toast
@@ -13,6 +23,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -28,6 +39,29 @@ class ReelsActivity : AppCompatActivity() {
 
     private var items: List<Video> = emptyList()
     private var loaded = false
+
+    /** Android 10'da izin onayından sonra tekrar denenecek video. */
+    private var pendingDelete: Uri? = null
+
+    private val deleteLauncher =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            val uri = pendingDelete
+            pendingDelete = null
+            if (result.resultCode != RESULT_OK) return@registerForActivityResult
+            // Android 10: kullanıcı izin verdi, şimdi gerçekten sil.
+            if (Build.VERSION.SDK_INT == 29 && uri != null) {
+                try { contentResolver.delete(uri, null, null) } catch (_: Exception) {}
+            }
+            // Android 11+ silmeyi sistem yaptı. Listeden çıkarma onResume'da olur.
+        }
+
+    private val writePermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+            val uri = pendingDelete
+            pendingDelete = null
+            if (ok && uri != null) deleteDirect(uri)
+            else Toast.makeText(this, "Silmek için depolama izni gerekli", Toast.LENGTH_SHORT).show()
+        }
     private lateinit var pager: ViewPager2
     private lateinit var positionText: TextView
 
@@ -90,6 +124,46 @@ class ReelsActivity : AppCompatActivity() {
         }
     }
 
+    /** Videoyu telefondan kalıcı olarak siler (onay sorulur). */
+    fun deleteVideo(id: Long, uri: Uri) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            // Sistem kendi onay penceresini gösterir.
+            val sender = MediaStore.createDeleteRequest(contentResolver, listOf(uri)).intentSender
+            deleteLauncher.launch(IntentSenderRequest.Builder(sender).build())
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Video silinsin mi?")
+            .setMessage("Bu video telefondan kalıcı olarak silinecek.")
+            .setPositiveButton("Sil") { _, _ ->
+                if (Build.VERSION.SDK_INT < 29 && ContextCompat.checkSelfPermission(
+                        this, Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    pendingDelete = uri
+                    writePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                } else {
+                    deleteDirect(uri)
+                }
+            }
+            .setNegativeButton("Vazgeç", null)
+            .show()
+    }
+
+    private fun deleteDirect(uri: Uri) {
+        try {
+            contentResolver.delete(uri, null, null)
+            removeDeleted()
+        } catch (e: SecurityException) {
+            if (Build.VERSION.SDK_INT == 29 && e is RecoverableSecurityException) {
+                pendingDelete = uri
+                deleteLauncher.launch(IntentSenderRequest.Builder(e.userAction.actionIntent.intentSender).build())
+            } else {
+                Toast.makeText(this, "Video silinemedi", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     private fun updatePosition() {
         positionText.text = "${pager.currentItem + 1} / ${items.size}"
     }
@@ -100,8 +174,11 @@ class ReelsActivity : AppCompatActivity() {
     }
 
     /** Galeriden dönünce: telefondan silinen videoları akıştan çıkar. */
+    private var pruneJob: Job? = null
+
     private fun removeDeleted() {
-        lifecycleScope.launch {
+        if (pruneJob?.isActive == true) return
+        pruneJob = lifecycleScope.launch {
             val existing = withContext(Dispatchers.IO) {
                 Videos.queryAll(this@ReelsActivity).mapTo(HashSet()) { it.id }
             }
@@ -110,7 +187,7 @@ class ReelsActivity : AppCompatActivity() {
             Store.forget(gone)
             val current = pager.currentItem
             items = items.filter { it.id in existing }
-            Toast.makeText(this@ReelsActivity, "Silinen video akıştan kaldırıldı", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@ReelsActivity, "Video silindi", Toast.LENGTH_SHORT).show()
             if (items.isEmpty()) {
                 finish()
                 return@launch

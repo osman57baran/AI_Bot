@@ -1,8 +1,6 @@
 package com.osman.reelsgaleri
 
 import android.annotation.SuppressLint
-import android.content.ActivityNotFoundException
-import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -17,7 +15,6 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.SeekBar
 import android.widget.TextView
-import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.media3.common.MediaItem
@@ -98,7 +95,9 @@ class ReelFragment : Fragment(R.layout.fragment_reel) {
             CommentsSheet.show(requireContext(), videoId) { refreshComments() }
         }
 
-        view.findViewById<ImageButton>(R.id.btnGallery).setOnClickListener { openInGallery() }
+        view.findViewById<ImageButton>(R.id.btnDelete).setOnClickListener {
+            (activity as? ReelsActivity)?.deleteVideo(videoId, uri)
+        }
 
         val detector = GestureDetector(requireContext(), object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent) = true
@@ -200,18 +199,6 @@ class ReelFragment : Fragment(R.layout.fragment_reel) {
         playerView.player = null
         player?.release()
         player = null
-    }
-
-    /** Videoyu telefonun galeri/oynatıcı uygulamasında açar (oradan silinebilir). */
-    private fun openInGallery() {
-        val intent = Intent(Intent.ACTION_VIEW)
-            .setDataAndType(uri, "video/*")
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        try {
-            startActivity(intent)
-        } catch (_: ActivityNotFoundException) {
-            Toast.makeText(requireContext(), "Videoyu açacak uygulama bulunamadı", Toast.LENGTH_SHORT).show()
-        }
     }
 
     private fun endHold() {
