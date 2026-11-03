@@ -97,5 +97,14 @@ object Store {
         save()
     }
 
+    /** Telefondan silinmiş videoların kayıtlarını temizler. */
+    fun forget(ids: Collection<Long>) {
+        if (ids.isEmpty()) return
+        selected.removeAll(ids.toSet())
+        likes.removeAll(ids.toSet())
+        ids.forEach { comments.remove(it) }
+        save()
+    }
+
     fun totalComments() = comments.values.sumOf { it.size }
 }

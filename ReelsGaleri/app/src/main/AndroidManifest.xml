@@ -22,6 +22,7 @@
         </activity>
 
         <activity android:name=".PickerActivity" />
+        <activity android:name=".LikedActivity" />
 
         <activity
             android:name=".ReelsActivity"

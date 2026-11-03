@@ -77,6 +77,12 @@ object Videos {
         return result
     }
 
+    /** Beğenilenler, en son beğenilen önce, sadece telefonda hâlâ duranlar. */
+    fun likedOrder(all: List<Video>): List<Video> {
+        val byId = all.associateBy { it.id }
+        return Store.likes.toList().asReversed().mapNotNull { byId[it] }
+    }
+
     fun formatDuration(ms: Long): String {
         if (ms <= 0) return ""
         val s = ms / 1000

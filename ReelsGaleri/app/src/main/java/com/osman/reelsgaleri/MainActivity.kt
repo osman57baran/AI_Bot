@@ -50,7 +50,7 @@ class MainActivity : AppCompatActivity() {
             if (Store.likes.isEmpty()) {
                 Toast.makeText(this, "Henüz beğendiğin video yok", Toast.LENGTH_SHORT).show()
             } else {
-                withPermission { openReels(likedOnly = true, shuffle.isChecked) }
+                withPermission { startActivity(Intent(this, LikedActivity::class.java)) }
             }
         }
     }
