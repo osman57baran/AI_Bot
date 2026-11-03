@@ -97,7 +97,7 @@
         android:layout_gravity="bottom"
         android:layout_marginStart="16dp"
         android:layout_marginEnd="84dp"
-        android:layout_marginBottom="36dp"
+        android:layout_marginBottom="44dp"
         android:orientation="vertical">
 
         <TextView
@@ -125,13 +125,45 @@
             android:textSize="13sp" />
     </LinearLayout>
 
-    <ProgressBar
-        android:id="@+id/progress"
-        style="@style/Widget.AppCompat.ProgressBar.Horizontal"
+    <TextView
+        android:id="@+id/speedBadge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="40dp"
+        android:background="@drawable/input_bg"
+        android:paddingStart="14dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="14dp"
+        android:paddingBottom="6dp"
+        android:text="2x ▶▶"
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/seekTime"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:shadowColor="#000000"
+        android:shadowRadius="6"
+        android:textColor="#FFFFFF"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <SeekBar
+        android:id="@+id/seek"
         android:layout_width="match_parent"
-        android:layout_height="3dp"
+        android:layout_height="36dp"
         android:layout_gravity="bottom"
         android:max="1000"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:progressBackgroundTint="#55FFFFFF"
         android:progressTint="#FFFFFF"
-        android:progressBackgroundTint="#44FFFFFF" />
+        android:thumbTint="#FFFFFF"
+        android:splitTrack="false" />
 </FrameLayout>

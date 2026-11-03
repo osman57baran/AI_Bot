@@ -13,7 +13,7 @@ import android.view.ViewGroup
 import android.view.animation.OvershootInterpolator
 import android.widget.ImageButton
 import android.widget.ImageView
-import android.widget.ProgressBar
+import android.widget.SeekBar
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
@@ -21,6 +21,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.PlayerView
 
 /** Tek bir video sayfası. Sadece ekranda olan sayfa oynatıcıyı tutar. */
@@ -48,7 +49,12 @@ class ReelFragment : Fragment(R.layout.fragment_reel) {
     private lateinit var lastComment: TextView
     private lateinit var playIcon: ImageView
     private lateinit var bigHeart: ImageView
-    private lateinit var progress: ProgressBar
+    private lateinit var seek: SeekBar
+    private lateinit var seekTime: TextView
+    private lateinit var speedBadge: TextView
+    private var dragging = false
+    /** Basılı tutma modu: 0 = yok, 1 = 2x hız, 2 = basılıyken duraklat */
+    private var holdMode = 0
     private lateinit var title: TextView
 
     private val handler = Handler(Looper.getMainLooper())
@@ -56,7 +62,7 @@ class ReelFragment : Fragment(R.layout.fragment_reel) {
         override fun run() {
             player?.let {
                 val d = it.duration
-                if (d > 0) progress.progress = (it.currentPosition * 1000 / d).toInt()
+                if (d > 0 && !dragging) seek.progress = (it.currentPosition * 1000 / d).toInt()
             }
             handler.postDelayed(this, 100)
         }
@@ -71,7 +77,9 @@ class ReelFragment : Fragment(R.layout.fragment_reel) {
         lastComment = view.findViewById(R.id.lastComment)
         playIcon = view.findViewById(R.id.playIcon)
         bigHeart = view.findViewById(R.id.bigHeart)
-        progress = view.findViewById(R.id.progress)
+        seek = view.findViewById(R.id.seek)
+        seekTime = view.findViewById(R.id.seekTime)
+        speedBadge = view.findViewById(R.id.speedBadge)
         title = view.findViewById(R.id.title)
 
         title.text = name.substringBeforeLast('.')
@@ -93,6 +101,23 @@ class ReelFragment : Fragment(R.layout.fragment_reel) {
                 togglePlay()
                 return true
             }
+            override fun onLongPress(e: MotionEvent) {
+                val p = player ?: return
+                val w = view.width
+                if (e.x < w * 0.3f || e.x > w * 0.7f) {
+                    // Ekranın sağ/sol kenarı: basılıyken 2x hız
+                    holdMode = 1
+                    p.setPlaybackSpeed(2f)
+                    if (!p.isPlaying) p.play()
+                    playIcon.visibility = View.GONE
+                    speedBadge.visibility = View.VISIBLE
+                } else {
+                    // Orta kısım: basılıyken duraklat
+                    holdMode = 2
+                    p.pause()
+                }
+            }
+
             override fun onDoubleTap(e: MotionEvent): Boolean {
                 Store.like(videoId)
                 refreshLike()
@@ -100,7 +125,47 @@ class ReelFragment : Fragment(R.layout.fragment_reel) {
                 return true
             }
         })
-        view.findViewById<View>(R.id.touch).setOnTouchListener { _, e -> detector.onTouchEvent(e) }
+        view.findViewById<View>(R.id.touch).setOnTouchListener { _, e ->
+            detector.onTouchEvent(e)
+            if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) endHold()
+            true
+        }
+
+        seek.setOnTouchListener { v, e ->
+            // Dikey kaydırma (sonraki video) çizgiyi sürüklerken araya girmesin
+            if (e.actionMasked == MotionEvent.ACTION_DOWN) v.parent.requestDisallowInterceptTouchEvent(true)
+            false
+        }
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val p = player ?: return
+                val d = p.duration
+                if (d <= 0) return
+                val pos = d * value / 1000
+                p.seekTo(pos)
+                seekTime.text = "${Videos.formatDuration(pos).ifEmpty { "0:00" }} / ${Videos.formatDuration(d)}"
+            }
+
+            override fun onStartTrackingTouch(bar: SeekBar) {
+                dragging = true
+                player?.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+                seekTime.visibility = View.VISIBLE
+                player?.let {
+                    if (it.duration > 0)
+                        seekTime.text = "${Videos.formatDuration(it.currentPosition).ifEmpty { "0:00" }} / ${Videos.formatDuration(it.duration)}"
+                }
+            }
+
+            override fun onStopTrackingTouch(bar: SeekBar) {
+                dragging = false
+                player?.let {
+                    it.setSeekParameters(SeekParameters.EXACT)
+                    if (it.duration > 0) it.seekTo(it.duration * bar.progress / 1000)
+                }
+                seekTime.visibility = View.GONE
+            }
+        })
     }
 
     override fun onResume() {
@@ -125,9 +190,22 @@ class ReelFragment : Fragment(R.layout.fragment_reel) {
     override fun onPause() {
         super.onPause()
         handler.removeCallbacks(progressTick)
+        holdMode = 0
+        speedBadge.visibility = View.GONE
         playerView.player = null
         player?.release()
         player = null
+    }
+
+    private fun endHold() {
+        when (holdMode) {
+            1 -> {
+                player?.setPlaybackSpeed(1f)
+                speedBadge.visibility = View.GONE
+            }
+            2 -> player?.play()
+        }
+        holdMode = 0
     }
 
     private fun togglePlay() {

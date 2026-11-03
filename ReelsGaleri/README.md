@@ -13,10 +13,17 @@ Galerindeki videolardan istediklerini seç, Instagram Reels gibi dikey kaydırar
 - **Reels'i İzle**: Yukarı/aşağı kaydır, video otomatik oynar ve döngüye girer.
   - Tek dokunuş → durdur / devam
   - Çift dokunuş → ❤ beğen (büyük kalp animasyonu)
+  - Ekranın sağ/sol kenarına basılı tut → 2x hız, bırakınca normale döner
+  - Ekranın ortasına basılı tut → bırakana kadar durur
+  - Alttaki çizgiyi sürükle → videoyu ileri/geri sar (ortada süre görünür)
   - ❤ butonu → beğen / beğeniyi geri al
   - 💬 butonu → yorumları gör, yorum yaz; yoruma uzun bas → sil
 - **Beğendiklerimi İzle**: Sadece beğendiğin videolar.
 - **Karışık sırayla oynat** anahtarı.
+
+## Sürümler
+- **1.1** — basılı tutunca 2x hız, sürüklenebilir zaman çizgisi, basılı tutunca duraklatma
+- **1.0** — ilk sürüm
 
 ## Derleme
 ```bash
