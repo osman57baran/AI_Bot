@@ -6,6 +6,7 @@ import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.materialswitch.MaterialSwitch
 
@@ -42,8 +43,30 @@ class MainActivity : AppCompatActivity() {
             if (Store.selected.isEmpty()) {
                 Toast.makeText(this, "Önce galeriden video seç", Toast.LENGTH_SHORT).show()
                 withPermission { startActivity(Intent(this, PickerActivity::class.java)) }
+            } else if (Store.unseenSelected().isEmpty()) {
+                Toast.makeText(
+                    this,
+                    "Tüm videoları gördün 🎉  'Keşfeti Sıfırla' ile baştan başlayabilirsin.",
+                    Toast.LENGTH_LONG
+                ).show()
             } else {
                 withPermission { openReels(likedOnly = false, shuffle.isChecked) }
+            }
+        }
+        findViewById<Button>(R.id.btnReset).setOnClickListener {
+            if (Store.seen.isEmpty()) {
+                Toast.makeText(this, "Zaten tüm videolar yeni", Toast.LENGTH_SHORT).show()
+            } else {
+                AlertDialog.Builder(this)
+                    .setTitle("Keşfeti sıfırla?")
+                    .setMessage("İzlendi sayılan tüm videolar yeniden baştan gösterilecek. Beğeni ve yorumların silinmez.")
+                    .setPositiveButton("Sıfırla") { _, _ ->
+                        Store.resetSeen()
+                        updateStats()
+                        Toast.makeText(this, "Keşfet sıfırlandı", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("Vazgeç", null)
+                    .show()
             }
         }
         findViewById<Button>(R.id.btnLiked).setOnClickListener {
@@ -57,8 +80,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        updateStats()
+    }
+
+    private fun updateStats() {
         findViewById<TextView>(R.id.stats).text =
             "🎬 Seçili video: ${Store.selected.size}\n" +
+                "🆕 Sıradaki yeni: ${Store.unseenSelected().size}\n" +
                 "❤ Beğenilen: ${Store.likes.size}\n" +
                 "💬 Yorum: ${Store.totalComments()}"
     }

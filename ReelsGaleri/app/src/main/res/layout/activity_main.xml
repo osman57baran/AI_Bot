@@ -71,5 +71,13 @@
             android:layout_marginTop="20dp"
             android:text="Karışık sırayla oynat"
             android:textColor="#FFFFFF" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnReset"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="🔄 Keşfeti Sıfırla (hepsini baştan göster)" />
     </LinearLayout>
 </ScrollView>

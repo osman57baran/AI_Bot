@@ -1,6 +1,7 @@
 package com.osman.reelsgaleri
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -8,6 +9,7 @@ import android.os.Looper
 import android.view.GestureDetector
 import android.view.LayoutInflater
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.OvershootInterpolator
@@ -55,6 +57,8 @@ class ReelFragment : Fragment(R.layout.fragment_reel) {
     private var dragging = false
     /** Basılı tutma modu: 0 = yok, 1 = 2x hız, 2 = basılıyken duraklat */
     private var holdMode = 0
+    /** İki parmakla yakınlaştırma oranı (1 = normal). */
+    private var scale = 1f
     private lateinit var title: TextView
 
     private val handler = Handler(Looper.getMainLooper())
@@ -98,6 +102,22 @@ class ReelFragment : Fragment(R.layout.fragment_reel) {
         view.findViewById<ImageButton>(R.id.btnDelete).setOnClickListener {
             (activity as? ReelsActivity)?.deleteVideo(videoId, uri)
         }
+        view.findViewById<ImageButton>(R.id.btnShare).setOnClickListener { shareVideo() }
+
+        // İki parmakla yakınlaştırma (bırakınca normale döner, Reels gibi)
+        val scaleDetector = ScaleGestureDetector(
+            requireContext(),
+            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScale(d: ScaleGestureDetector): Boolean {
+                    scale = (scale * d.scaleFactor).coerceIn(1f, 4f)
+                    playerView.pivotX = d.focusX
+                    playerView.pivotY = d.focusY
+                    playerView.scaleX = scale
+                    playerView.scaleY = scale
+                    return true
+                }
+            }
+        )
 
         val detector = GestureDetector(requireContext(), object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent) = true
@@ -129,9 +149,16 @@ class ReelFragment : Fragment(R.layout.fragment_reel) {
                 return true
             }
         })
-        view.findViewById<View>(R.id.touch).setOnTouchListener { _, e ->
-            detector.onTouchEvent(e)
-            if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) endHold()
+        view.findViewById<View>(R.id.touch).setOnTouchListener { v, e ->
+            scaleDetector.onTouchEvent(e)
+            // İki parmak değince dikey kaydırma (sonraki video) araya girmesin
+            if (e.pointerCount >= 2) v.parent.requestDisallowInterceptTouchEvent(true)
+            // Yakınlaştırma yokken normal dokunuşlar (oynat/duraklat, beğeni, 2x)
+            if (!scaleDetector.isInProgress && scale == 1f) detector.onTouchEvent(e)
+            if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) {
+                endHold()
+                if (scale != 1f) resetZoom()
+            }
             true
         }
 
@@ -196,9 +223,26 @@ class ReelFragment : Fragment(R.layout.fragment_reel) {
         handler.removeCallbacks(progressTick)
         holdMode = 0
         speedBadge.visibility = View.GONE
+        scale = 1f
+        playerView.scaleX = 1f
+        playerView.scaleY = 1f
         playerView.player = null
         player?.release()
         player = null
+    }
+
+    private fun resetZoom() {
+        scale = 1f
+        playerView.animate().scaleX(1f).scaleY(1f).setDuration(150).start()
+    }
+
+    private fun shareVideo() {
+        val share = Intent(Intent.ACTION_SEND).apply {
+            type = "video/*"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(share, "Videoyu paylaş"))
     }
 
     private fun endHold() {

@@ -39,6 +39,8 @@ class ReelsActivity : AppCompatActivity() {
 
     private var items: List<Video> = emptyList()
     private var loaded = false
+    /** Normal "Reels'i İzle" modunda izlenenleri işaretle (keşfet akışı). */
+    private var trackSeen = false
 
     /** Android 10'da izin onayından sonra tekrar denenecek video. */
     private var pendingDelete: Uri? = null
@@ -84,6 +86,7 @@ class ReelsActivity : AppCompatActivity() {
         val shuffle = intent.getBooleanExtra(EXTRA_SHUFFLE, false)
         val savedOrder = savedInstanceState?.getLongArray(STATE_ORDER)
         val startId = intent.getLongExtra(EXTRA_START_ID, -1L)
+        trackSeen = !likedOnly && startId == -1L
 
         lifecycleScope.launch {
             val all = withContext(Dispatchers.IO) { Videos.queryAll(this@ReelsActivity) }
@@ -91,7 +94,7 @@ class ReelsActivity : AppCompatActivity() {
             val ids: List<Long> = when {
                 savedOrder != null -> savedOrder.toList()
                 likedOnly -> Videos.likedOrder(all).map { it.id } // en son beğenilen önce
-                else -> Store.selected.toList()
+                else -> Store.unseenSelected()
             }
             var list = ids.mapNotNull { byId[it] }
             if (shuffle && savedOrder == null && startId == -1L) list = list.shuffled()
@@ -113,6 +116,7 @@ class ReelsActivity : AppCompatActivity() {
             pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
                 override fun onPageSelected(p: Int) {
                     updatePosition()
+                    markProgress()
                 }
             })
             if (savedOrder == null && startId != -1L) {
@@ -166,6 +170,20 @@ class ReelsActivity : AppCompatActivity() {
 
     private fun updatePosition() {
         positionText.text = "${pager.currentItem + 1} / ${items.size}"
+    }
+
+    /** Gecilen (ustte kalan) videolari "izlendi" say; su anki video, donusta
+     *  kaldigin yer olsun diye isaretlenmez. */
+    private fun markProgress() {
+        if (!trackSeen || items.isEmpty()) return
+        val upto = pager.currentItem
+        if (upto <= 0) return
+        Store.markSeen(items.subList(0, upto).map { it.id })
+    }
+
+    override fun onStop() {
+        super.onStop()
+        markProgress()
     }
 
     override fun onResume() {

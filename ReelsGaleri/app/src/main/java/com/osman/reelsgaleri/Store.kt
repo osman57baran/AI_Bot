@@ -19,6 +19,9 @@ object Store {
     val likes = LinkedHashSet<Long>()
     val comments = HashMap<Long, MutableList<Comment>>()
 
+    /** Izlenmis ("kesfedilmis") videolar: her video bir kez gelsin diye tutulur. */
+    val seen = LinkedHashSet<Long>()
+
     fun init(ctx: Context) {
         if (file != null) return
         val f = File(ctx.applicationContext.filesDir, "data.json")
@@ -28,6 +31,7 @@ object Store {
             val o = JSONObject(f.readText())
             o.optJSONArray("selected")?.let { a -> for (i in 0 until a.length()) selected += a.getLong(i) }
             o.optJSONArray("likes")?.let { a -> for (i in 0 until a.length()) likes += a.getLong(i) }
+            o.optJSONArray("seen")?.let { a -> for (i in 0 until a.length()) seen += a.getLong(i) }
             o.optJSONObject("comments")?.let { c ->
                 for (key in c.keys()) {
                     val arr = c.getJSONArray(key)
@@ -51,6 +55,7 @@ object Store {
         val o = JSONObject()
         o.put("selected", JSONArray(selected.toList()))
         o.put("likes", JSONArray(likes.toList()))
+        o.put("seen", JSONArray(seen.toList()))
         val c = JSONObject()
         for ((id, list) in comments) {
             if (list.isEmpty()) continue
@@ -102,7 +107,21 @@ object Store {
         if (ids.isEmpty()) return
         selected.removeAll(ids.toSet())
         likes.removeAll(ids.toSet())
+        seen.removeAll(ids.toSet())
         ids.forEach { comments.remove(it) }
+        save()
+    }
+
+    /** Henuz izlenmemis secili videolar (secim sirasini korur). */
+    fun unseenSelected(): List<Long> = selected.filter { it !in seen }
+
+    fun markSeen(ids: Collection<Long>) {
+        if (seen.addAll(ids)) save()
+    }
+
+    fun resetSeen() {
+        if (seen.isEmpty()) return
+        seen.clear()
         save()
     }
 

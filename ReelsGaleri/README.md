@@ -18,11 +18,15 @@ Galerindeki videolardan istediklerini seç, Instagram Reels gibi dikey kaydırar
   - Alttaki çizgiyi sürükle → videoyu ileri/geri sar (ortada süre görünür)
   - ❤ butonu → beğen / beğeniyi geri al
   - 💬 butonu → yorumları gör, yorum yaz; yoruma uzun bas → sil
+  - İki parmakla **yakınlaştırma** (bırakınca normale döner)
+  - 📤 **Paylaş** butonu → videoyu WhatsApp vb. ile paylaşır (Android paylaş menüsü)
   - 🗑 **Sil** butonu → videoyu uygulamanın içinden telefondan siler (Android onay sorar); video akıştan da çıkar
+- **Keşfet akışı**: "Reels'i İzle"de her video yalnızca bir kez gelir. Uygulamadan çıkıp girince kaldığın videodan devam eder. Ana ekrandaki **Keşfeti Sıfırla** ile hepsi yeniden baştan gösterilir.
 - **Beğendiklerim**: Beğendiğin videolar ızgarada; birine dokununca o videodan itibaren kaydırmalı izleme açılır.
 - **Karışık sırayla oynat** anahtarı.
 
 ## Sürümler
+- **1.4** — iki parmakla yakınlaştırma, Paylaş butonu, "her video bir kez" keşfet akışı + kaldığın yerden devam + Keşfeti Sıfırla
 - **1.3** — "Galeri" butonu yerine uygulama içinden "Sil" butonu
 - **1.2** — beğenilenler ızgara görünümü, "Galeride aç" butonu, silinen videoların otomatik temizlenmesi
 - **1.1** — basılı tutunca 2x hız, sürüklenebilir zaman çizgisi, basılı tutunca duraklatma
