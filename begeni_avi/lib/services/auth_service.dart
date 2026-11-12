@@ -9,6 +9,9 @@ class AuthService {
   static bool _googleReady = false;
 
   static Future<void> signInWithGoogle() async {
+    if (!AppConfig.googleConfigured) {
+      throw Exception('Google ile giriş henüz açılmadı, şimdilik e-posta ile devam et.');
+    }
     final gs = GoogleSignIn.instance;
     if (!_googleReady) {
       await gs.initialize(serverClientId: AppConfig.googleWebClientId);
@@ -62,6 +65,6 @@ class AuthService {
       if (e.code == GoogleSignInExceptionCode.canceled) return 'Google girişi iptal edildi.';
       return 'Google girişi başarısız: ${e.description ?? e.code.name}';
     }
-    return '$e';
+    return '$e'.replaceFirst('Exception: ', '');
   }
 }
