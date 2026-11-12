@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import 'config.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/splash_screen.dart';
+import 'widgets/social_widgets.dart';
 import 'theme.dart';
 
 Future<void> main() async {
@@ -40,7 +42,7 @@ class BegeniAviApp extends StatelessWidget {
       title: 'Beğeni Avı',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
-      home: initError != null ? _SetupError(message: initError!) : const AuthGate(),
+      home: SplashScreen(next: initError != null ? _SetupError(message: initError!) : const AuthGate()),
     );
   }
 }
@@ -56,7 +58,7 @@ class AuthGate extends StatelessWidget {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
-        return snap.data == null ? const LoginScreen() : const HomeScreen();
+        return snap.data == null ? const LoginScreen() : const InviteListener(child: HomeScreen());
       },
     );
   }

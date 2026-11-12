@@ -8,6 +8,7 @@ import '../services/db.dart';
 import '../theme.dart';
 import '../widgets/avatar.dart';
 import '../widgets/fx.dart';
+import '../widgets/social_widgets.dart';
 import '../widgets/tiktok_player.dart';
 
 class RoomScreen extends StatefulWidget {
@@ -32,6 +33,7 @@ class _RoomScreenState extends State<RoomScreen> {
   // Titreşimlerin her soru için bir kez çalması için
   String _hapticKey = '';
   double _drag = 0;
+  String? _warmId;
   bool _dragging = false;
   int _lastTickSec = -1;
 
@@ -41,7 +43,11 @@ class _RoomScreenState extends State<RoomScreen> {
   void initState() {
     super.initState();
     Db.getUser(_me).then((me) {
-      if (me != null) Db.refreshMyEntry(widget.code, me).catchError((_) {});
+      if (me == null) return;
+      Db.refreshMyEntry(widget.code, me).catchError((_) {});
+      // Lobideyken TikTok oynatıcısını ısıt: ilk video da hızlı açılsın
+      final any = [...me.likes, ...me.reposts];
+      if (any.isNotEmpty && mounted) setState(() => _warmId = any.first.id);
     });
     _tick = Timer.periodic(const Duration(milliseconds: 250), (_) {
       if (!mounted) return;
@@ -166,7 +172,9 @@ class _RoomScreenState extends State<RoomScreen> {
     final canStart = players.length >= Db.minPlayers && totalVideos > 0;
     return Scaffold(
       appBar: AppBar(title: const Text('Lobi', style: TextStyle(fontWeight: FontWeight.w800))),
-      body: ListView(padding: const EdgeInsets.all(20), children: [
+      body: Stack(children: [
+        if (_warmId != null) Positioned(left: 0, top: 0, child: TikTokPreloader(videoIds: [_warmId!])),
+        ListView(padding: const EdgeInsets.all(20), children: [
         Pop(
           from: 0.8,
           child: Pressable(
@@ -196,6 +204,16 @@ class _RoomScreenState extends State<RoomScreen> {
                 ]),
               ]),
             ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Pop(
+          delay: const Duration(milliseconds: 150),
+          from: 0.8,
+          child: OutlinedButton.icon(
+            onPressed: () => InviteFriendsSheet.open(context, room),
+            icon: const Icon(Icons.group_add),
+            label: const Text('Arkadaş davet et'),
           ),
         ),
         const SizedBox(height: 24),
@@ -296,6 +314,7 @@ class _RoomScreenState extends State<RoomScreen> {
               child: Text('Oda sahibinin başlatması bekleniyor…', style: TextStyle(color: AppColors.muted)),
             ),
           ),
+      ]),
       ]),
     );
   }
@@ -429,6 +448,13 @@ class _RoomScreenState extends State<RoomScreen> {
         }
       },
       child: Stack(alignment: Alignment.center, children: [
+        // Sıradaki videoyu arkada önceden yükle
+        if (room.qi + 1 < room.questions.length)
+          Positioned(
+            left: 0,
+            top: 0,
+            child: TikTokPreloader(videoIds: [room.questions[room.qi + 1].video.id]),
+          ),
         AnimatedContainer(
           duration: _dragging ? Duration.zero : const Duration(milliseconds: 320),
           curve: Curves.easeOutBack,
@@ -889,7 +915,7 @@ class _LivePointsState extends State<_LivePoints> {
   @override
   Widget build(BuildContext context) {
     final pts = _lockedPts ?? _now;
-    final hot = pts >= 70;
+    final hot = pts >= 85;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

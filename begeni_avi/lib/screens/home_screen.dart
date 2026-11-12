@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../models.dart';
 import '../services/auth_service.dart';
 import '../services/db.dart';
+import '../services/social.dart';
 import '../theme.dart';
 import '../widgets/avatar.dart';
+import '../widgets/social_widgets.dart';
 import 'room_screen.dart';
 import 'tiktok_connect_screen.dart';
 
@@ -18,6 +22,26 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   bool _autoPrompted = false;
   bool _busy = false;
+  Timer? _heartbeat;
+
+  @override
+  void initState() {
+    super.initState();
+    _heartbeat = Timer.periodic(const Duration(seconds: 60), (_) => Social.heartbeat().catchError((_) {}));
+  }
+
+  @override
+  void dispose() {
+    _heartbeat?.cancel();
+    super.dispose();
+  }
+
+  void _sync(UserProfile me) {
+    final hadCode = Social.myCode.isNotEmpty;
+    Social.syncProfile(me).then((_) {
+      if (!hadCode && mounted) setState(() {});
+    }).catchError((_) {});
+  }
 
   void _maybeAutoConnect(UserProfile me) {
     if (_autoPrompted || me.tiktokLinked) return;
@@ -82,6 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final me = snap.data;
         if (me == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
         _maybeAutoConnect(me);
+        _sync(me);
         return Scaffold(
           appBar: AppBar(
             title: const Text('Beğeni Avı', style: TextStyle(fontWeight: FontWeight.w900)),
@@ -132,6 +157,8 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.login),
               label: const Text('Odaya katıl'),
             ),
+            const SizedBox(height: 32),
+            const FriendsSection(),
             const SizedBox(height: 28),
             const _HowTo(),
           ]),
@@ -202,9 +229,9 @@ class _HowTo extends StatelessWidget {
         const Text('Nasıl oynanır?', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
         const SizedBox(height: 12),
         step('1', 'Herkes TikTok hesabını bağlar (SMS koduyla, şifresiz).'),
-        step('2', 'Biri oda kurar, diğerleri 4 haneli kodla katılır (en az 2 kişi).'),
+        step('2', 'Biri oda kurar, arkadaşlarını tek dokunuşla davet eder ya da kodu paylaşır (en az 2 kişi).'),
         step('3', 'Herkesin beğendiği videolar sırayla oynar. Sıkıcıysa yukarı kaydırıp geçin.'),
-        step('4', 'Kimin beğendiğini tahmin et: ne kadar hızlı bilirsen o kadar puan (100 → 20). Kendi videonu da tahmin et! Video senin ise, yanılan her kişi için +50.'),
+        step('4', 'Kimin beğendiğini tahmin et: ilk 3 saniyede 100 puan, sonra yavaş yavaş 50\'ye iner. Kendi videonu da tahmin et! Video senin ise, yanılan her kişi için +50.'),
       ]),
     );
   }

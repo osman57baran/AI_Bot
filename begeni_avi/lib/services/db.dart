@@ -15,15 +15,17 @@ class Db {
   // Oyun ayarları
   static const questionSeconds = 20;
   static const revealSeconds = 6;
-  static const pointsCorrect = 100; // anında cevap
-  static const pointsCorrectMin = 20; // son saniyede cevap
+  static const pointsCorrect = 100; // ilk 3 saniyede cevap
+  static const pointsCorrectMin = 50; // son saniyede cevap
+  static const fullPointsMs = 3000; // bu süre boyunca puan düşmez
   static const pointsFooled = 50; // sahibine, yanlış tahmin eden her kişi için
   static const minPlayers = 2;
   static const spareCount = 8; // açılmayan videoların yerine geçecek yedekler
 
-  /// Doğru cevabın puanı: ne kadar hızlıysa o kadar çok (100 → 20).
+  /// Doğru cevabın puanı: ilk 3 sn tam 100, sonra süre bitene kadar 50'ye iner.
   static int pointsFor(int elapsedMs) {
-    final f = (elapsedMs / (questionSeconds * 1000)).clamp(0.0, 1.0);
+    final decay = questionSeconds * 1000 - fullPointsMs;
+    final f = ((elapsedMs - fullPointsMs) / decay).clamp(0.0, 1.0);
     return (pointsCorrect - (pointsCorrect - pointsCorrectMin) * f).round();
   }
 

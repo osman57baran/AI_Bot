@@ -22,7 +22,11 @@ enum _State { loading, playing, failed }
 /// - Oynatıcının gönderdiği olaylar (hazır / oynuyor / hata) dinlenir:
 ///   takılırsa yeniden yüklenir, video silinmiş/gizliyse [onUnavailable] çağrılır.
 class TikTokPlayer extends StatefulWidget {
-  const TikTokPlayer({super.key, required this.videoId, this.onUnavailable});
+  const TikTokPlayer({super.key, required this.videoId, this.onUnavailable, this.preload = false});
+
+  /// true ise görünmez ön yükleyici: video oynamaz, sadece oynatıcı dosyaları
+  /// ve videonun başı önbelleğe alınır; sıradaki soru çok daha hızlı açılır.
+  final bool preload;
   final String videoId;
   final VoidCallback? onUnavailable;
 
@@ -76,9 +80,9 @@ class _TikTokPlayerState extends State<TikTokPlayer> {
     _stall?.cancel();
     _loadSeq++;
     if (mounted) setState(() => _state = _State.loading);
-    _stall = Timer(_stallTimeout, _retry);
+    if (!widget.preload) _stall = Timer(_stallTimeout, _retry);
     final src = 'https://www.tiktok.com/player/v1/${widget.videoId}'
-        '?autoplay=1&loop=1&music_info=0&description=0&rel=0&native_context_menu=0&closed_caption=0';
+        '?autoplay=${widget.preload ? 0 : 1}&loop=1&music_info=0&description=0&rel=0&native_context_menu=0&closed_caption=0';
     _c.loadHtmlString('''<!doctype html>
 <html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
@@ -96,7 +100,10 @@ iframe{border:0;width:100%;height:100%;display:block}</style>
     var d = e.data;
     if (typeof d === 'string') { try { d = JSON.parse(d); } catch(x) { return; } }
     if (!d || !d['x-tiktok-player']) return;
-    if (d.type === 'onPlayerReady') { cmd('unMute'); cmd('play'); send({t:'ready'}); }
+    if (d.type === 'onPlayerReady') {
+      if (${widget.preload}) { cmd('mute'); return; }
+      cmd('unMute'); cmd('play'); send({t:'ready'});
+    }
     else if (d.type === 'onCurrentTime' || (d.type === 'onStateChange' && d.value === 1)) {
       if (!playing) { playing = true; send({t:'playing'}); }
     }
@@ -115,7 +122,7 @@ iframe{border:0;width:100%;height:100%;display:block}</style>
   }
 
   void _onEvent(String raw) {
-    if (!mounted) return;
+    if (!mounted || widget.preload) return;
     Map m;
     try {
       m = jsonDecode(raw) as Map;
@@ -219,6 +226,25 @@ iframe{border:0;width:100%;height:100%;display:block}</style>
                       ]),
               ),
             ),
+        ]),
+      ),
+    );
+  }
+}
+
+/// Sıradaki videoları görünmez şekilde önceden yükler.
+class TikTokPreloader extends StatelessWidget {
+  const TikTokPreloader({super.key, required this.videoIds});
+  final List<String> videoIds;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Opacity(
+        opacity: 0.01, // tamamen görünmez olursa bazı cihazlar yüklemeyi durduruyor
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          for (final id in videoIds)
+            SizedBox(width: 90, height: 160, child: TikTokPlayer(key: ValueKey('pre$id'), videoId: id, preload: true)),
         ]),
       ),
     );

@@ -6,9 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('hızlı cevap daha çok puan getirir', () {
     expect(Db.pointsFor(0), 100);
-    expect(Db.pointsFor(10000), 60);
-    expect(Db.pointsFor(20000), 20);
-    expect(Db.pointsFor(99999), 20); // süre aşımı alt sınırda kalır
+    expect(Db.pointsFor(3000), 100); // ilk 3 sn tam puan
+    expect(Db.pointsFor(11500), 75); // yarı yolda
+    expect(Db.pointsFor(20000), 50);
+    expect(Db.pointsFor(99999), 50); // süre aşımı alt sınırda kalır
     expect(Db.pointsFor(-500), 100); // saat farkı negatif çıkarsa
     expect(Db.pointsFor(2000) > Db.pointsFor(5000), isTrue);
   });
@@ -51,9 +52,9 @@ void main() {
     // a (sahibi) kendini 1 sn'de bildi, b yanıldı, c 11 sn'de bildi
     var r = room({'a': 'a', 'b': 'c', 'c': 'a'}, {'a': 2000, 'b': 3000, 'c': 12000});
     var g = Db.computeGains(r, r.current!);
-    expect(g['a'], 96 + 50); // hatırlama puanı + b'yi kandırma
+    expect(g['a'], 100 + 50); // hatırlama puanı + b'yi kandırma
     expect(g['b'], isNull);
-    expect(g['c'], 56);
+    expect(g['c'], 76);
 
     // a kendi beğenisini unuttu: kendine kandırma puanı vermez
     r = room({'a': 'b'}, {'a': 2000});

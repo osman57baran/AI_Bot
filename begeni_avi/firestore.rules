@@ -1,15 +1,49 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Profiller: giriş yapan herkes okuyabilir (oyunda videolar buradan alınır),
-    // sadece sahibi yazabilir.
+    function signedIn() { return request.auth != null; }
+
+    // Profiller (videolar dahil): giriş yapan herkes okuyabilir
+    // (oyunda videolar buradan alınır), sadece sahibi yazabilir.
     match /users/{uid} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow read: if signedIn();
+      allow write: if signedIn() && request.auth.uid == uid;
     }
+
+    // Arkadaşlara görünen hafif profil: ad, avatar, arkadaş kodu, çevrimiçi.
+    match /profiles/{uid} {
+      allow read: if signedIn();
+      allow write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Arkadaşlıklar: iki taraf görebilir. İsteği gönderen oluşturur,
+    // karşı taraf kabul eder, iki taraf da silebilir.
+    match /friendships/{id} {
+      allow read: if signedIn() && request.auth.uid in resource.data.users;
+      allow create: if signedIn()
+        && request.resource.data.from == request.auth.uid
+        && request.auth.uid in request.resource.data.users
+        && request.resource.data.users.size() == 2
+        && request.resource.data.status == 'pending';
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.users
+        && request.auth.uid != resource.data.from
+        && request.resource.data.status == 'accepted'
+        && request.resource.data.users == resource.data.users
+        && request.resource.data.from == resource.data.from;
+      allow delete: if signedIn() && request.auth.uid in resource.data.users;
+    }
+
+    // Oda davetleri: gönderen oluşturur; alan ve gönderen okuyup silebilir.
+    match /invites/{id} {
+      allow create: if signedIn() && request.resource.data.from == request.auth.uid;
+      allow read, delete: if signedIn()
+        && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid);
+    }
+
     // Oyun odaları: giriş yapan herkes okuyup yazabilir.
     match /rooms/{code} {
-      allow read, write: if request.auth != null;
+      allow read, write: if signedIn();
     }
   }
 }
