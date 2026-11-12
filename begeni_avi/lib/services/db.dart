@@ -18,7 +18,7 @@ class Db {
   static const pointsCorrect = 100; // anında cevap
   static const pointsCorrectMin = 20; // son saniyede cevap
   static const pointsFooled = 50; // sahibine, yanlış tahmin eden her kişi için
-  static const minPlayers = 3;
+  static const minPlayers = 2;
   static const spareCount = 8; // açılmayan videoların yerine geçecek yedekler
 
   /// Doğru cevabın puanı: ne kadar hızlıysa o kadar çok (100 → 20).
@@ -32,6 +32,7 @@ class Db {
         'qi': qi,
         'votes': {},
         'vt': {},
+        'skip': {},
         'gain': {},
         'qStart': FieldValue.serverTimestamp(),
         'deadline': DateTime.now().millisecondsSinceEpoch + questionSeconds * 1000,
@@ -225,7 +226,14 @@ class Db {
         'vt.$myUid': FieldValue.serverTimestamp(),
       });
 
-  /// Video açılmıyorsa (silinmiş / gizli) soruyu yedek bir videoyla değiştirir.
+  /// Videoyu yukarı kaydırıp "geç" oyu verir.
+  static Future<void> skipVote(String code) => _rooms.doc(code).update({'skip.$myUid': true});
+
+  /// Kaç kişinin kaydırması gerekir: çoğunluk (2 kişide 1, 3-4 kişide 2...).
+  static int skipThreshold(int players) => (players / 2).ceil().clamp(1, 99);
+
+  /// Video açılmıyorsa (silinmiş / gizli) ya da çoğunluk geçmek istediyse
+  /// soruyu yedek bir videoyla değiştirir.
   /// Aynı soruyu birden fazla telefon bildirebilir; transaction sadece bir kez uygular.
   static Future<void> replaceBrokenVideo(String code, int qi, String videoId) async {
     final ref = _rooms.doc(code);
@@ -253,6 +261,26 @@ class Db {
     });
   }
 
+  /// Turun puanları: doğru tahmin hıza göre 100→20, video sahibine
+  /// yanılan her başka oyuncu için +50. Sahibi de kendi videosuna oy verir.
+  static Map<String, int> computeGains(Room room, Question q) {
+    final gain = <String, int>{};
+    for (final entry in room.votes.entries) {
+      if (q.owners.contains(entry.value)) {
+        final at = room.voteTimes[entry.key] ?? 0;
+        final elapsed = (room.qStart > 0 && at > 0) ? at - room.qStart : questionSeconds * 1000;
+        gain[entry.key] = (gain[entry.key] ?? 0) + pointsFor(elapsed);
+      } else {
+        // Başkası yanıldıysa video sahibi kandırma puanı alır
+        for (final o in q.owners) {
+          if (o == entry.key) continue;
+          gain[o] = (gain[o] ?? 0) + pointsFooled;
+        }
+      }
+    }
+    return gain;
+  }
+
   /// Host: turu bitirip puanları dağıtır.
   static Future<void> reveal(String code) async {
     final ref = _rooms.doc(code);
@@ -263,22 +291,11 @@ class Db {
       if (room.status != 'question') return;
       final q = room.current;
       if (q == null) return;
-      final gain = <String, int>{};
-      for (final entry in room.votes.entries) {
-        if (q.owners.contains(entry.key)) continue; // sahibin oyu sayılmaz
-        if (q.owners.contains(entry.value)) {
-          final at = room.voteTimes[entry.key] ?? 0;
-          final elapsed = (room.qStart > 0 && at > 0) ? at - room.qStart : questionSeconds * 1000;
-          gain[entry.key] = (gain[entry.key] ?? 0) + pointsFor(elapsed);
-        } else {
-          for (final o in q.owners) {
-            gain[o] = (gain[o] ?? 0) + pointsFooled;
-          }
-        }
-      }
+      final gain = computeGains(room, q);
       final upd = <String, dynamic>{
         'status': 'reveal',
         'gain': gain,
+        'skip': {},
         'deadline': DateTime.now().millisecondsSinceEpoch + revealSeconds * 1000,
       };
       gain.forEach((uid, pts) {
@@ -311,6 +328,7 @@ class Db {
         'qi': -1,
         'votes': {},
         'vt': {},
+        'skip': {},
         'gain': {},
       });
 }

@@ -202,9 +202,9 @@ class _HowTo extends StatelessWidget {
         const Text('Nasıl oynanır?', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
         const SizedBox(height: 12),
         step('1', 'Herkes TikTok hesabını bağlar (SMS koduyla, şifresiz).'),
-        step('2', 'Biri oda kurar, diğerleri 4 haneli kodla katılır (en az 3 kişi).'),
-        step('3', 'Arkadaşlarının beğendiği ve repostladığı videolar sırayla oynar.'),
-        step('4', 'Kimin beğendiğini tahmin et: ne kadar hızlı bilirsen o kadar puan (100 → 20). Video senin ise, yanılan her kişi için +50.'),
+        step('2', 'Biri oda kurar, diğerleri 4 haneli kodla katılır (en az 2 kişi).'),
+        step('3', 'Herkesin beğendiği videolar sırayla oynar. Sıkıcıysa yukarı kaydırıp geçin.'),
+        step('4', 'Kimin beğendiğini tahmin et: ne kadar hızlı bilirsen o kadar puan (100 → 20). Kendi videonu da tahmin et! Video senin ise, yanılan her kişi için +50.'),
       ]),
     );
   }

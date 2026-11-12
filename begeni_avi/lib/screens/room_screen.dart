@@ -31,6 +31,8 @@ class _RoomScreenState extends State<RoomScreen> {
 
   // Titreşimlerin her soru için bir kez çalması için
   String _hapticKey = '';
+  double _drag = 0;
+  bool _dragging = false;
   int _lastTickSec = -1;
 
   String get _me => Db.myUid;
@@ -69,11 +71,16 @@ class _RoomScreenState extends State<RoomScreen> {
       if (r.status == 'question') {
         final q = r.current;
         if (q == null) return;
-        final voters = r.players.keys.where((u) => !q.owners.contains(u));
-        final allVoted = voters.every(r.votes.containsKey);
-        if (now >= r.deadline || (isHost && allVoted)) await Db.reveal(r.code);
-      } else if (r.status == 'reveal' && now >= r.deadline) {
-        await Db.next(r.code);
+        final skipped = r.skips.length >= Db.skipThreshold(r.players.length);
+        final allVoted = r.players.keys.every(r.votes.containsKey);
+        if (isHost && skipped) {
+          await Db.replaceBrokenVideo(r.code, r.qi, q.video.id);
+        } else if (now >= r.deadline || (isHost && allVoted)) {
+          await Db.reveal(r.code);
+        }
+      } else if (r.status == 'reveal') {
+        final skipped = r.skips.length >= Db.skipThreshold(r.players.length);
+        if (now >= r.deadline || (isHost && skipped)) await Db.next(r.code);
       }
     } catch (_) {
     } finally {
@@ -376,21 +383,7 @@ class _RoomScreenState extends State<RoomScreen> {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Stack(alignment: Alignment.center, children: [
-                Center(
-                  child: AspectRatio(
-                    aspectRatio: 9 / 16,
-                    child: TikTokPlayer(
-                      videoId: q.video.id,
-                      onUnavailable: reveal ? null : () => Db.replaceBrokenVideo(room.code, room.qi, q.video.id),
-                    ),
-                  ),
-                ),
-                if (reveal && (room.lastGain[_me] ?? 0) > 0) ...[
-                  Positioned.fill(child: ConfettiBurst(key: ValueKey('c${room.qi}'))),
-                  FloatingGain(key: ValueKey('g${room.qi}'), text: '+${room.lastGain[_me]}'),
-                ],
-              ]),
+              child: _swipeArea(room, q, reveal),
             ),
           ),
           Padding(
@@ -416,31 +409,104 @@ class _RoomScreenState extends State<RoomScreen> {
     );
   }
 
+  /// TikTok gibi: video alttan kayarak gelir, yukarı kaydırınca geç oyu verilir.
+  Widget _swipeArea(Room room, Question q, bool reveal) {
+    final iSkipped = room.skips.contains(_me);
+    final need = Db.skipThreshold(room.players.length);
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onVerticalDragStart: (_) => setState(() => _dragging = true),
+      onVerticalDragUpdate: (d) => setState(() => _drag = (_drag + d.delta.dy).clamp(-260.0, 50.0)),
+      onVerticalDragEnd: (d) {
+        final swiped = _drag < -90 || (d.primaryVelocity ?? 0) < -800;
+        setState(() {
+          _dragging = false;
+          _drag = 0;
+        });
+        if (swiped && !iSkipped) {
+          HapticFeedback.mediumImpact();
+          Db.skipVote(room.code);
+        }
+      },
+      child: Stack(alignment: Alignment.center, children: [
+        AnimatedContainer(
+          duration: _dragging ? Duration.zero : const Duration(milliseconds: 320),
+          curve: Curves.easeOutBack,
+          transform: Matrix4.translationValues(0, _drag, 0),
+          child: Opacity(
+            opacity: (1 + _drag / 400).clamp(0.4, 1.0),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 420),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              layoutBuilder: (cur, prev) => Stack(alignment: Alignment.center, children: [...prev, ?cur]),
+              transitionBuilder: (child, a) {
+                final incoming = child.key == ValueKey('v${q.video.id}');
+                final tween = incoming
+                    ? Tween(begin: const Offset(0, 1.05), end: Offset.zero)
+                    : Tween(begin: const Offset(0, -1.05), end: Offset.zero);
+                return SlideTransition(position: tween.animate(a), child: child);
+              },
+              child: Center(
+                key: ValueKey('v${q.video.id}'),
+                child: AspectRatio(
+                  aspectRatio: 9 / 16,
+                  child: TikTokPlayer(
+                    videoId: q.video.id,
+                    onUnavailable: reveal ? null : () => Db.replaceBrokenVideo(room.code, room.qi, q.video.id),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (reveal && (room.lastGain[_me] ?? 0) > 0) ...[
+          Positioned.fill(child: ConfettiBurst(key: ValueKey('c${room.qi}'))),
+          FloatingGain(key: ValueKey('g${room.qi}'), text: '+${room.lastGain[_me]}'),
+        ],
+        // Kaydırma ipucu / geç oyu durumu
+        Positioned(
+          bottom: 10,
+          child: IgnorePointer(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: (iSkipped ? AppColors.cyan : Colors.black).withValues(alpha: iSkipped ? 0.85 : 0.55),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(iSkipped ? Icons.hourglass_top : Icons.keyboard_double_arrow_up,
+                    size: 16, color: iSkipped ? AppColors.bg : Colors.white),
+                const SizedBox(width: 4),
+                Text(
+                  iSkipped
+                      ? 'Geçmek için bekleniyor ${room.skips.length}/$need'
+                      : (reveal ? 'Kaydır: sonraki video' : 'Kaydır: geç') +
+                          (room.skips.isEmpty ? '' : '  ${room.skips.length}/$need'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: iSkipped ? AppColors.bg : Colors.white,
+                  ),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+
   Widget _votePanel(Room room, Question q, String verb) {
-    final voters = room.players.keys.where((u) => !q.owners.contains(u)).toList();
-    final votedCount = voters.where(room.votes.containsKey).length;
-    final progress = Text('$votedCount / ${voters.length} kişi oy verdi',
+    final votedCount = room.players.keys.where(room.votes.containsKey).length;
+    final progress = Text('$votedCount / ${room.players.length} kişi oy verdi',
         style: const TextStyle(color: AppColors.muted, fontSize: 13));
 
-    if (q.owners.contains(_me)) {
-      return Column(mainAxisSize: MainAxisSize.min, children: [
-        TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0.9, end: 1.05),
-          duration: const Duration(milliseconds: 900),
-          curve: Curves.easeInOut,
-          builder: (_, s, child) => Transform.scale(scale: s, child: child),
-          child: const Text('🤫', style: TextStyle(fontSize: 46)),
-        ),
-        const Text('Bu senin videon!', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: AppColors.yellow)),
-        const SizedBox(height: 2),
-        const Text('Belli etme, herkes tahmin ediyor…', style: TextStyle(color: AppColors.muted)),
-        const SizedBox(height: 8),
-        progress,
-      ]);
-    }
-
     final myVote = room.votes[_me];
-    final options = room.players.values.where((p) => p.uid != _me).toList();
+    // Kendin de seçeneklerdesin: eskiden beğendiğini hatırlıyor musun?
+    final options = room.players.values.toList()
+      ..sort((a, b) => a.uid == _me ? -1 : (b.uid == _me ? 1 : 0));
     return Column(mainAxisSize: MainAxisSize.min, children: [
       Text('Bunu kim $verb?', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
       const SizedBox(height: 12),
@@ -519,7 +585,7 @@ class _RoomScreenState extends State<RoomScreen> {
                   ),
               ]),
               const SizedBox(height: 6),
-              Text(p.name,
+              Text(p.uid == _me ? 'Ben' : p.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
@@ -540,9 +606,12 @@ class _RoomScreenState extends State<RoomScreen> {
 
     String title;
     Color color;
-    if (iWasOwner) {
-      title = myGain > 0 ? 'KANDIRDIN! 😈' : 'SENİ BULDULAR 😅';
-      color = myGain > 0 ? AppColors.green : AppColors.yellow;
+    if (iWasOwner && correct) {
+      title = 'HATIRLADIN! 🧠';
+      color = AppColors.green;
+    } else if (iWasOwner) {
+      title = myVote == null ? 'KENDİ VİDEON! ⏰' : 'KENDİ BEĞENİNİ UNUTTUN 😂';
+      color = AppColors.yellow;
     } else if (correct) {
       title = 'DOĞRU! 🎯';
       color = AppColors.green;
@@ -556,7 +625,7 @@ class _RoomScreenState extends State<RoomScreen> {
     final ranking = room.ranking;
     return Column(mainAxisSize: MainAxisSize.min, children: [
       Shake(
-        enabled: !correct && !(iWasOwner && myGain > 0),
+        enabled: !correct,
         child: Pop(
           from: 0.5,
           child: Container(
@@ -638,14 +707,11 @@ class _RoomScreenState extends State<RoomScreen> {
                       ],
                     ]),
                     Text(
-                      isOwner
-                          ? 'sahibi'
-                          : vote == null
-                              ? 'oy yok'
-                              : '→ ${room.players[vote]?.name ?? '?'}',
+                      (isOwner ? '♥ ' : '') +
+                          (vote == null ? 'oy yok' : '→ ${vote == p.uid ? 'kendisi' : room.players[vote]?.name ?? '?'}'),
                       style: TextStyle(
                         fontSize: 11,
-                        color: isOwner ? AppColors.green : (ok ? AppColors.green : AppColors.muted),
+                        color: ok ? AppColors.green : (isOwner ? AppColors.pink : AppColors.muted),
                         fontWeight: FontWeight.w700,
                       ),
                     ),

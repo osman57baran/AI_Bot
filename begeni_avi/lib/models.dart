@@ -124,6 +124,7 @@ class Room {
     required this.lastGain,
     required this.qStart,
     required this.voteTimes,
+    required this.skips,
   });
 
   final String code;
@@ -138,6 +139,7 @@ class Room {
   final Map<String, int> lastGain; // son turda kazanılan puanlar
   final int qStart; // sorunun başladığı an (sunucu saati, ms)
   final Map<String, int> voteTimes; // uid -> oy anı (sunucu saati, ms)
+  final Set<String> skips; // videoyu geçmek için kaydıranlar
 
   Question? get current => (qi >= 0 && qi < questions.length) ? questions[qi] : null;
 
@@ -158,6 +160,7 @@ class Room {
       lastGain: (m['gain'] as Map? ?? {}).map((k, v) => MapEntry('$k', (v as num).toInt())),
       qStart: tsMs(m['qStart']),
       voteTimes: (m['vt'] as Map? ?? {}).map((k, v) => MapEntry('$k', tsMs(v))),
+      skips: (m['skip'] as Map? ?? {}).keys.map((k) => '$k').toSet(),
     );
   }
 }

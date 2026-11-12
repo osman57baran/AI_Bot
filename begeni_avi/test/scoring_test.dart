@@ -33,4 +33,38 @@ void main() {
     expect(room.lastGain['b'], 85);
     expect(room.current!.owners, ['a']);
   });
+
+  test('sahibi de oy verir; kandırma puanı sadece başkalarının hatasından', () {
+    Room room(Map<String, String> votes, Map<String, int> times) => Room.fromMap('1', {
+          'host': 'a',
+          'status': 'question',
+          'players': {'a': {}, 'b': {}, 'c': {}},
+          'questions': [
+            {'v': {'id': '1'}, 'o': ['a'], 'k': 'like'}
+          ],
+          'qi': 0,
+          'votes': votes,
+          'vt': times.map((k, v) => MapEntry(k, Timestamp.fromMillisecondsSinceEpoch(v))),
+          'qStart': Timestamp.fromMillisecondsSinceEpoch(1000),
+        });
+
+    // a (sahibi) kendini 1 sn'de bildi, b yanıldı, c 11 sn'de bildi
+    var r = room({'a': 'a', 'b': 'c', 'c': 'a'}, {'a': 2000, 'b': 3000, 'c': 12000});
+    var g = Db.computeGains(r, r.current!);
+    expect(g['a'], 96 + 50); // hatırlama puanı + b'yi kandırma
+    expect(g['b'], isNull);
+    expect(g['c'], 56);
+
+    // a kendi beğenisini unuttu: kendine kandırma puanı vermez
+    r = room({'a': 'b'}, {'a': 2000});
+    g = Db.computeGains(r, r.current!);
+    expect(g, isEmpty);
+  });
+
+  test('geçme için çoğunluk gerekir', () {
+    expect(Db.skipThreshold(2), 1);
+    expect(Db.skipThreshold(3), 2);
+    expect(Db.skipThreshold(4), 2);
+    expect(Db.skipThreshold(5), 3);
+  });
 }
