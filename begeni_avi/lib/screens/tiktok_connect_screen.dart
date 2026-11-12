@@ -13,6 +13,9 @@ import '../theme.dart';
 const _desktopUA =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
+const _phoneLogin = 'https://www.tiktok.com/login/phone-or-email/phone';
+const _emailLogin = 'https://www.tiktok.com/login/phone-or-email/email';
+
 const _maxLikes = 300;
 const _maxReposts = 150;
 
@@ -89,7 +92,9 @@ class _TikTokConnectScreenState extends State<TikTokConnectScreen> {
       }
       if (widget.freshLogin) await cookies.clearCookies();
     }
-    await _web.loadRequest(Uri.parse('https://www.tiktok.com/login'));
+    // Şifresiz giriş: telefon numarası + SMS kodu. Oturum daha önce açıldıysa
+    // TikTok bu sayfadan zaten ana sayfaya yönlendirir ve direkt çekmeye geçilir.
+    await _web.loadRequest(Uri.parse(_phoneLogin));
 
     // Giriş yapıldı mı diye düzenli kontrol (TikTok tek sayfa uygulaması,
     // giriş sonrası her zaman sayfa yenilenmiyor).
@@ -264,18 +269,22 @@ class _TikTokConnectScreenState extends State<TikTokConnectScreen> {
         title: const Text('TikTok Bağla', style: TextStyle(fontWeight: FontWeight.w800)),
         bottom: _step == _Step.login
             ? PreferredSize(
-                preferredSize: const Size.fromHeight(44),
+                preferredSize: const Size.fromHeight(64),
                 child: Container(
                   color: AppColors.card,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  child: const Row(children: [
-                    Icon(Icons.info_outline, size: 18, color: AppColors.cyan),
-                    SizedBox(width: 8),
-                    Expanded(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                  child: Row(children: [
+                    const Icon(Icons.sms_outlined, size: 22, color: AppColors.cyan),
+                    const SizedBox(width: 10),
+                    const Expanded(
                       child: Text(
-                        'Telefon, e-posta ya da kullanıcı adınla giriş yap.',
-                        style: TextStyle(fontSize: 13),
+                        'Telefon numaranı yaz, gelen SMS kodunu gir.\nŞifre gerekmez, sadece bir kere.',
+                        style: TextStyle(fontSize: 13, height: 1.3),
                       ),
+                    ),
+                    TextButton(
+                      onPressed: () => _web.loadRequest(Uri.parse(_emailLogin)),
+                      child: const Text('E-posta ile'),
                     ),
                   ]),
                 ),
