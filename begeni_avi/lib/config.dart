@@ -21,7 +21,7 @@ class AppConfig {
   /// Google ile giriş için "Web client ID"
   /// (Authentication > Sign-in method > Google > Web SDK configuration)
   /// ...apps.googleusercontent.com ile biter
-  static const googleWebClientId = 'BURAYA_WEB_CLIENT_ID';
+  static const googleWebClientId = '747120359820-0vvlclsp9r0894b4s94o7t65e7742qad.apps.googleusercontent.com';
 
   static bool get isConfigured => !firebaseApiKey.startsWith('BURAYA');
   static bool get googleConfigured => !googleWebClientId.startsWith('BURAYA');
