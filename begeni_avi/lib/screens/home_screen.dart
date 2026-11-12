@@ -204,7 +204,7 @@ class _HowTo extends StatelessWidget {
         step('1', 'Herkes TikTok hesabını bağlar (SMS koduyla, şifresiz).'),
         step('2', 'Biri oda kurar, diğerleri 4 haneli kodla katılır (en az 3 kişi).'),
         step('3', 'Arkadaşlarının beğendiği ve repostladığı videolar sırayla oynar.'),
-        step('4', 'Kimin beğendiğini tahmin et: doğru tahmin +100. Video senin ise, yanılan her kişi için +50.'),
+        step('4', 'Kimin beğendiğini tahmin et: ne kadar hızlı bilirsen o kadar puan (100 → 20). Video senin ise, yanılan her kişi için +50.'),
       ]),
     );
   }

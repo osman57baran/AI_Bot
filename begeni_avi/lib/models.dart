@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 /// TikTok'tan çekilen bir video (beğeni ya da repost).
 class TtVideo {
   TtVideo({required this.id, this.cover = '', this.desc = '', this.author = ''});
@@ -120,6 +122,8 @@ class Room {
     required this.deadline,
     required this.votes,
     required this.lastGain,
+    required this.qStart,
+    required this.voteTimes,
   });
 
   final String code;
@@ -132,6 +136,8 @@ class Room {
   final int deadline; // ms epoch
   final Map<String, String> votes; // oy veren uid -> tahmin edilen uid
   final Map<String, int> lastGain; // son turda kazanılan puanlar
+  final int qStart; // sorunun başladığı an (sunucu saati, ms)
+  final Map<String, int> voteTimes; // uid -> oy anı (sunucu saati, ms)
 
   Question? get current => (qi >= 0 && qi < questions.length) ? questions[qi] : null;
 
@@ -150,6 +156,15 @@ class Room {
       deadline: (m['deadline'] as num?)?.toInt() ?? 0,
       votes: (m['votes'] as Map? ?? {}).map((k, v) => MapEntry('$k', '$v')),
       lastGain: (m['gain'] as Map? ?? {}).map((k, v) => MapEntry('$k', (v as num).toInt())),
+      qStart: tsMs(m['qStart']),
+      voteTimes: (m['vt'] as Map? ?? {}).map((k, v) => MapEntry('$k', tsMs(v))),
     );
   }
+}
+
+/// Firestore zaman damgasını milisaniyeye çevirir (henüz yazılmadıysa 0).
+int tsMs(dynamic v) {
+  if (v is Timestamp) return v.millisecondsSinceEpoch;
+  if (v is num) return v.toInt();
+  return 0;
 }

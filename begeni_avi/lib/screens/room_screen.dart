@@ -377,7 +377,15 @@ class _RoomScreenState extends State<RoomScreen> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Stack(alignment: Alignment.center, children: [
-                Center(child: AspectRatio(aspectRatio: 9 / 16, child: TikTokPlayer(videoId: q.video.id))),
+                Center(
+                  child: AspectRatio(
+                    aspectRatio: 9 / 16,
+                    child: TikTokPlayer(
+                      videoId: q.video.id,
+                      onUnavailable: reveal ? null : () => Db.replaceBrokenVideo(room.code, room.qi, q.video.id),
+                    ),
+                  ),
+                ),
                 if (reveal && (room.lastGain[_me] ?? 0) > 0) ...[
                   Positioned.fill(child: ConfettiBurst(key: ValueKey('c${room.qi}'))),
                   FloatingGain(key: ValueKey('g${room.qi}'), text: '+${room.lastGain[_me]}'),
@@ -465,7 +473,11 @@ class _RoomScreenState extends State<RoomScreen> {
         );
       }),
       const SizedBox(height: 10),
-      progress,
+      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        _LivePoints(deadline: room.deadline, locked: myVote != null, key: ValueKey('lp${room.qi}')),
+        const SizedBox(width: 14),
+        progress,
+      ]),
     ]);
   }
 
@@ -539,6 +551,8 @@ class _RoomScreenState extends State<RoomScreen> {
       color = AppColors.pink;
     }
 
+    final myAt = room.voteTimes[_me] ?? 0;
+    final speed = (correct && myAt > 0 && room.qStart > 0) ? (myAt - room.qStart) / 1000 : null;
     final ranking = room.ranking;
     return Column(mainAxisSize: MainAxisSize.min, children: [
       Shake(
@@ -552,6 +566,15 @@ class _RoomScreenState extends State<RoomScreen> {
           ),
         ),
       ),
+      if (speed != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: SlideIn(
+            delay: const Duration(milliseconds: 300),
+            child: Text('⚡ ${speed.toStringAsFixed(1)} sn\'de bildin  •  +$myGain',
+                style: const TextStyle(color: AppColors.yellow, fontWeight: FontWeight.w800)),
+          ),
+        ),
       const SizedBox(height: 12),
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         for (var i = 0; i < owners.length; i++)
@@ -752,6 +775,69 @@ class _RoomScreenState extends State<RoomScreen> {
             ),
           ),
       ]),
+    );
+  }
+}
+
+/// Oy verirken "şu an doğru bilirsen kaç puan" sayacı; zamanla düşer.
+class _LivePoints extends StatefulWidget {
+  const _LivePoints({super.key, required this.deadline, required this.locked});
+  final int deadline;
+  final bool locked;
+
+  @override
+  State<_LivePoints> createState() => _LivePointsState();
+}
+
+class _LivePointsState extends State<_LivePoints> {
+  Timer? _t;
+  int? _lockedPts;
+
+  int get _now {
+    final total = Db.questionSeconds * 1000;
+    final elapsed = total - (widget.deadline - DateTime.now().millisecondsSinceEpoch);
+    return Db.pointsFor(elapsed);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.locked) _lockedPts = _now;
+    _t = Timer.periodic(const Duration(milliseconds: 120), (_) {
+      if (mounted && _lockedPts == null) setState(() {});
+    });
+  }
+
+  @override
+  void didUpdateWidget(_LivePoints old) {
+    super.didUpdateWidget(old);
+    if (widget.locked && !old.locked) _lockedPts = _now;
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pts = _lockedPts ?? _now;
+    final hot = pts >= 70;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: (_lockedPts != null ? AppColors.green : (hot ? AppColors.yellow : AppColors.pink)).withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        _lockedPts != null ? '🔒 $pts puanlık' : '⚡ $pts puan',
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          color: _lockedPts != null ? AppColors.green : (hot ? AppColors.yellow : AppColors.pink),
+        ),
+      ),
     );
   }
 }

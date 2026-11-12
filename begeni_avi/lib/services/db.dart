@@ -15,9 +15,27 @@ class Db {
   // Oyun ayarları
   static const questionSeconds = 20;
   static const revealSeconds = 6;
-  static const pointsCorrect = 100;
+  static const pointsCorrect = 100; // anında cevap
+  static const pointsCorrectMin = 20; // son saniyede cevap
   static const pointsFooled = 50; // sahibine, yanlış tahmin eden her kişi için
   static const minPlayers = 3;
+  static const spareCount = 8; // açılmayan videoların yerine geçecek yedekler
+
+  /// Doğru cevabın puanı: ne kadar hızlıysa o kadar çok (100 → 20).
+  static int pointsFor(int elapsedMs) {
+    final f = (elapsedMs / (questionSeconds * 1000)).clamp(0.0, 1.0);
+    return (pointsCorrect - (pointsCorrect - pointsCorrectMin) * f).round();
+  }
+
+  static Map<String, dynamic> _newQuestionFields(int qi) => {
+        'status': 'question',
+        'qi': qi,
+        'votes': {},
+        'vt': {},
+        'gain': {},
+        'qStart': FieldValue.serverTimestamp(),
+        'deadline': DateTime.now().millisecondsSinceEpoch + questionSeconds * 1000,
+      };
 
   // ------------------------------------------------------------------ users
 
@@ -178,23 +196,23 @@ class Db {
     }
     final picked = <Question>[];
     final owners = byOwner.keys.toList()..shuffle(rnd);
-    while (picked.length < questionCount && byOwner.values.any((l) => l.isNotEmpty)) {
+    final want = questionCount + spareCount;
+    while (picked.length < want && byOwner.values.any((l) => l.isNotEmpty)) {
       for (final o in owners) {
         final l = byOwner[o]!;
-        if (l.isEmpty || picked.length >= questionCount) continue;
+        if (l.isEmpty || picked.length >= want) continue;
         final e = l.removeLast();
         picked.add(Question(video: e.v, owners: e.owners.toList(), kind: e.kind));
       }
     }
-    picked.shuffle(rnd);
+    // İlk tur sahiplere göre dengeli olduğu için sorular baştan, yedekler sondan
+    final main = picked.take(questionCount).toList()..shuffle(rnd);
+    final spares = picked.skip(questionCount).toList();
 
     final upd = <String, dynamic>{
-      'questions': picked.map((q) => q.toMap()).toList(),
-      'qi': 0,
-      'status': 'question',
-      'votes': {},
-      'gain': {},
-      'deadline': DateTime.now().millisecondsSinceEpoch + questionSeconds * 1000,
+      'questions': main.map((q) => q.toMap()).toList(),
+      'spares': spares.map((q) => q.toMap()).toList(),
+      ..._newQuestionFields(0),
     };
     for (final uid in room.players.keys) {
       upd['players.$uid.score'] = 0;
@@ -202,8 +220,38 @@ class Db {
     await _rooms.doc(room.code).update(upd);
   }
 
-  static Future<void> vote(String code, String guessUid) =>
-      _rooms.doc(code).update({'votes.$myUid': guessUid});
+  static Future<void> vote(String code, String guessUid) => _rooms.doc(code).update({
+        'votes.$myUid': guessUid,
+        'vt.$myUid': FieldValue.serverTimestamp(),
+      });
+
+  /// Video açılmıyorsa (silinmiş / gizli) soruyu yedek bir videoyla değiştirir.
+  /// Aynı soruyu birden fazla telefon bildirebilir; transaction sadece bir kez uygular.
+  static Future<void> replaceBrokenVideo(String code, int qi, String videoId) async {
+    final ref = _rooms.doc(code);
+    await _fs.runTransaction((tx) async {
+      final s = await tx.get(ref);
+      if (!s.exists) return;
+      final d = s.data()!;
+      if (d['status'] != 'question' || d['qi'] != qi) return;
+      final questions = List<dynamic>.from(d['questions'] as List? ?? []);
+      if (qi >= questions.length) return;
+      final cur = Question.fromMap(questions[qi] as Map);
+      if (cur.video.id != videoId) return; // zaten değiştirilmiş
+      final spares = List<dynamic>.from(d['spares'] as List? ?? []);
+      if (spares.isNotEmpty) {
+        questions[qi] = spares.removeAt(0);
+        tx.update(ref, {'questions': questions, 'spares': spares, ..._newQuestionFields(qi)});
+      } else {
+        questions.removeAt(qi);
+        if (qi >= questions.length) {
+          tx.update(ref, {'questions': questions, 'status': questions.isEmpty ? 'lobby' : 'end'});
+        } else {
+          tx.update(ref, {'questions': questions, ..._newQuestionFields(qi)});
+        }
+      }
+    });
+  }
 
   /// Host: turu bitirip puanları dağıtır.
   static Future<void> reveal(String code) async {
@@ -219,7 +267,9 @@ class Db {
       for (final entry in room.votes.entries) {
         if (q.owners.contains(entry.key)) continue; // sahibin oyu sayılmaz
         if (q.owners.contains(entry.value)) {
-          gain[entry.key] = (gain[entry.key] ?? 0) + pointsCorrect;
+          final at = room.voteTimes[entry.key] ?? 0;
+          final elapsed = (room.qStart > 0 && at > 0) ? at - room.qStart : questionSeconds * 1000;
+          gain[entry.key] = (gain[entry.key] ?? 0) + pointsFor(elapsed);
         } else {
           for (final o in q.owners) {
             gain[o] = (gain[o] ?? 0) + pointsFooled;
@@ -249,13 +299,7 @@ class Db {
       if (room.qi + 1 >= room.questions.length) {
         tx.update(ref, {'status': 'end'});
       } else {
-        tx.update(ref, {
-          'status': 'question',
-          'qi': room.qi + 1,
-          'votes': {},
-          'gain': {},
-          'deadline': DateTime.now().millisecondsSinceEpoch + questionSeconds * 1000,
-        });
+        tx.update(ref, _newQuestionFields(room.qi + 1));
       }
     });
   }
@@ -263,8 +307,10 @@ class Db {
   static Future<void> backToLobby(String code) => _rooms.doc(code).update({
         'status': 'lobby',
         'questions': [],
+        'spares': [],
         'qi': -1,
         'votes': {},
+        'vt': {},
         'gain': {},
       });
 }
