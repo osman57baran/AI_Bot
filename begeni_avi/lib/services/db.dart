@@ -17,6 +17,7 @@ class Db {
   static const revealSeconds = 6;
   static const pointsCorrect = 100;
   static const pointsFooled = 50; // sahibine, yanlış tahmin eden her kişi için
+  static const minPlayers = 3;
 
   // ------------------------------------------------------------------ users
 
@@ -160,11 +161,15 @@ class Db {
       }
     }
     if (pool.isEmpty) throw Exception('Kimsenin videosu yok. Önce TikTok hesaplarını bağlayın.');
+    // Herkesin beğendiği videoda oy verecek kimse kalmaz, onları ele
+    final playerCount = room.players.length;
+    final usable = pool.values.where((e) => e.owners.length < playerCount).toList();
+    if (usable.isEmpty) throw Exception('Sorulabilecek video yok: herkes aynı videoları beğenmiş.');
 
     // Sahiplere göre dengeli seç: her turda farklı birinin videosu gelsin.
     final rnd = Random();
     final byOwner = <String, List<({TtVideo v, Set<String> owners, String kind})>>{};
-    for (final e in pool.values) {
+    for (final e in usable) {
       final key = (e.owners.toList()..shuffle(rnd)).first;
       byOwner.putIfAbsent(key, () => []).add(e);
     }

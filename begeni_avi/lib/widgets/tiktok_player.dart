@@ -26,12 +26,17 @@ class _TikTokPlayerState extends State<TikTokPlayer> {
           if (mounted) setState(() => _loading = false);
         },
         // Oynatıcının içinden başka sayfaya/uygulamaya gitmesin
-        onNavigationRequest: (r) =>
-            r.url.contains('/player/') ? NavigationDecision.navigate : NavigationDecision.prevent,
+        onNavigationRequest: (r) => (!r.isMainFrame || r.url.contains('/player/'))
+            ? NavigationDecision.navigate
+            : NavigationDecision.prevent,
       ));
+    _init();
+  }
+
+  Future<void> _init() async {
     final p = _c.platform;
     if (p is AndroidWebViewController) {
-      p.setMediaPlaybackRequiresUserGesture(false);
+      await p.setMediaPlaybackRequiresUserGesture(false);
     }
     _load();
   }

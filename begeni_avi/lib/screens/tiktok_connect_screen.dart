@@ -137,6 +137,7 @@ class _TikTokConnectScreenState extends State<TikTokConnectScreen> {
   }
 
   void _onMessage(String raw) {
+    if (!mounted) return;
     Map<String, dynamic> m;
     try {
       m = jsonDecode(raw) as Map<String, dynamic>;
@@ -185,13 +186,11 @@ class _TikTokConnectScreenState extends State<TikTokConnectScreen> {
       _status = '@$_username bağlandı! Videolar çekiliyor…';
     });
     // Her ihtimale karşı en fazla 75 sn bekle
-    _safety = Timer(const Duration(seconds: 75), _finish);
-    if (_secUid.isEmpty) {
-      _awaitingProfile = true;
-      _web.loadRequest(Uri.parse('https://www.tiktok.com/@$_username'));
-    } else {
-      _run(jsFetchLists(_secUid, _maxLikes, _maxReposts));
-    }
+    _safety = Timer(const Duration(seconds: 90), _finish);
+    // Her zaman profil sayfasına git: TikTok'un istek imzalayan kodu orada
+    // kesin yüklü olur, secUid de oradan doğru okunur.
+    _awaitingProfile = true;
+    _web.loadRequest(Uri.parse('https://www.tiktok.com/@$_username'));
   }
 
   void _updateStatus() {
@@ -215,6 +214,7 @@ class _TikTokConnectScreenState extends State<TikTokConnectScreen> {
   void _startFallback() {
     if (_fallback) return;
     _fallback = true;
+    if (!mounted) return;
     setState(() => _status = 'Videolar profilinden okunuyor…');
     _awaitingProfile = true;
     _web.loadRequest(Uri.parse('https://www.tiktok.com/@$_username'));
@@ -227,7 +227,7 @@ class _TikTokConnectScreenState extends State<TikTokConnectScreen> {
   }
 
   Future<void> _finish() async {
-    if (_step != _Step.working) return;
+    if (!mounted || _step != _Step.working) return;
     _safety?.cancel();
     if (_likes.isEmpty && _reposts.isEmpty) {
       setState(() {

@@ -33,6 +33,9 @@ class _RoomScreenState extends State<RoomScreen> {
   @override
   void initState() {
     super.initState();
+    Db.getUser(_me).then((me) {
+      if (me != null) Db.refreshMyEntry(widget.code, me).catchError((_) {});
+    });
     _tick = Timer.periodic(const Duration(milliseconds: 500), (_) {
       if (!mounted) return;
       setState(() {}); // geri sayımı güncelle
@@ -50,8 +53,12 @@ class _RoomScreenState extends State<RoomScreen> {
   /// verince cevabı açar, sonra sıradaki soruya geçer.
   Future<void> _hostLoop() async {
     final r = _room;
-    if (r == null || r.host != _me || _hostBusy) return;
-    final now = DateTime.now().millisecondsSinceEpoch;
+    if (r == null || _hostBusy) return;
+    final isHost = r.host == _me;
+    // Oda sahibi uygulamadan düşerse oyun takılmasın: süre 4 sn aşılınca
+    // herkes ilerletmeyi dener (işlemler transaction olduğu için güvenli).
+    final now = DateTime.now().millisecondsSinceEpoch - (isHost ? 0 : 4000);
+    if (!isHost && now < r.deadline) return;
     try {
       _hostBusy = true;
       if (r.status == 'question') {
@@ -59,7 +66,7 @@ class _RoomScreenState extends State<RoomScreen> {
         if (q == null) return;
         final voters = r.players.keys.where((u) => !q.owners.contains(u));
         final allVoted = voters.every(r.votes.containsKey);
-        if (now >= r.deadline || allVoted) await Db.reveal(r.code);
+        if (now >= r.deadline || (isHost && allVoted)) await Db.reveal(r.code);
       } else if (r.status == 'reveal' && now >= r.deadline) {
         await Db.next(r.code);
       }
@@ -111,7 +118,7 @@ class _RoomScreenState extends State<RoomScreen> {
     final isHost = room.host == _me;
     final players = room.players.values.toList();
     final totalVideos = players.fold<int>(0, (s, p) => s + p.videoCount);
-    final canStart = players.length >= 2 && totalVideos > 0;
+    final canStart = players.length >= Db.minPlayers && totalVideos > 0;
     return Scaffold(
       appBar: AppBar(title: const Text('Lobi', style: TextStyle(fontWeight: FontWeight.w800))),
       body: ListView(padding: const EdgeInsets.all(20), children: [
@@ -186,7 +193,11 @@ class _RoomScreenState extends State<RoomScreen> {
                       if (mounted) setState(() => _starting = false);
                     }
                   },
-            child: Text(players.length < 2 ? 'En az 2 kişi gerekli' : 'Başlat'),
+            child: Text(players.length < Db.minPlayers
+                ? 'En az ${Db.minPlayers} kişi gerekli'
+                : totalVideos == 0
+                    ? 'Kimsenin TikTok\'u bağlı değil'
+                    : 'Başlat'),
           ),
         ] else
           const Center(
@@ -202,7 +213,8 @@ class _RoomScreenState extends State<RoomScreen> {
   // ------------------------------------------------------------------ oyun
 
   Widget _game(Room room) {
-    final q = room.current!;
+    final q = room.current;
+    if (q == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     final reveal = room.status == 'reveal';
     final now = DateTime.now().millisecondsSinceEpoch;
     final total = (reveal ? Db.revealSeconds : Db.questionSeconds) * 1000;
@@ -255,7 +267,7 @@ class _RoomScreenState extends State<RoomScreen> {
       return _banner('🤫 Bu senin videon!', 'Belli etme, herkes tahmin ediyor…', AppColors.yellow);
     }
     final myVote = room.votes[_me];
-    final players = room.players.values.toList();
+    final players = room.players.values.where((p) => p.uid != _me).toList();
     return Column(mainAxisSize: MainAxisSize.min, children: [
       Text('Bunu kim $verb?', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
       const SizedBox(height: 10),

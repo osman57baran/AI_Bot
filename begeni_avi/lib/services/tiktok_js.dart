@@ -88,8 +88,13 @@ const jsReadProfile = r'''
 /// Beğeni ve repost listelerini TikTok'un kendi web API'sinden sayfa içinden çeker.
 String jsFetchLists(String secUid, int maxLikes, int maxReposts) => '''
 (async function(){
-  const post = window.__baPost || ((o) => { try { BA.postMessage(JSON.stringify(o)); } catch(e){} });
-  const slim = window.__baSlim;
+  const post = (o) => { try { BA.postMessage(JSON.stringify(o)); } catch(e){} };
+  const slim = (it) => ({
+    id: it.id,
+    desc: it.desc,
+    video: { cover: it.video && (it.video.cover || it.video.originCover || it.video.dynamicCover) },
+    author: { uniqueId: it.author && it.author.uniqueId }
+  });
   async function grab(kind, path, max) {
     let cursor = '0', total = 0;
     try {
