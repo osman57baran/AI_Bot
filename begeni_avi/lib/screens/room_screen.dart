@@ -7,6 +7,7 @@ import '../models.dart';
 import '../services/db.dart';
 import '../theme.dart';
 import '../widgets/avatar.dart';
+import '../widgets/fx.dart';
 import '../widgets/tiktok_player.dart';
 
 class RoomScreen extends StatefulWidget {
@@ -28,6 +29,10 @@ class _RoomScreenState extends State<RoomScreen> {
   int _questionCount = 10;
   bool _starting = false;
 
+  // Titreşimlerin her soru için bir kez çalması için
+  String _hapticKey = '';
+  int _lastTickSec = -1;
+
   String get _me => Db.myUid;
 
   @override
@@ -36,10 +41,10 @@ class _RoomScreenState extends State<RoomScreen> {
     Db.getUser(_me).then((me) {
       if (me != null) Db.refreshMyEntry(widget.code, me).catchError((_) {});
     });
-    _tick = Timer.periodic(const Duration(milliseconds: 500), (_) {
+    _tick = Timer.periodic(const Duration(milliseconds: 250), (_) {
       if (!mounted) return;
-      setState(() {}); // geri sayımı güncelle
       _hostLoop();
+      _countdownHaptics();
     });
   }
 
@@ -76,6 +81,29 @@ class _RoomScreenState extends State<RoomScreen> {
     }
   }
 
+  void _countdownHaptics() {
+    final r = _room;
+    if (r == null || r.status != 'question') return;
+    final secs = ((r.deadline - DateTime.now().millisecondsSinceEpoch) / 1000).ceil();
+    if (secs != _lastTickSec && secs > 0 && secs <= 3 && !r.votes.containsKey(_me)) {
+      HapticFeedback.lightImpact();
+    }
+    _lastTickSec = secs;
+  }
+
+  void _revealHaptics(Room room, Question q) {
+    final key = '${room.qi}';
+    if (_hapticKey == key) return;
+    _hapticKey = key;
+    final gain = room.lastGain[_me] ?? 0;
+    if (gain > 0) {
+      HapticFeedback.heavyImpact();
+      Future.delayed(const Duration(milliseconds: 140), HapticFeedback.heavyImpact);
+    } else {
+      HapticFeedback.vibrate();
+    }
+  }
+
   Future<void> _leave() async {
     try {
       await Db.leaveRoom(widget.code);
@@ -102,11 +130,21 @@ class _RoomScreenState extends State<RoomScreen> {
               body: const Center(child: Text('Oda kapandı.', style: TextStyle(fontSize: 18))),
             );
           }
-          return switch (room.status) {
+          final screen = switch (room.status) {
             'question' || 'reveal' => _game(room),
             'end' => _end(room),
             _ => _lobby(room),
           };
+          final kind = room.status == 'reveal' ? 'question' : room.status;
+          return AnimatedSwitcher(
+            duration: const Duration(milliseconds: 450),
+            switchInCurve: Curves.easeOutCubic,
+            transitionBuilder: (child, a) => FadeTransition(
+              opacity: a,
+              child: ScaleTransition(scale: Tween(begin: 0.96, end: 1.0).animate(a), child: child),
+            ),
+            child: KeyedSubtree(key: ValueKey(kind), child: screen),
+          );
         },
       ),
     );
@@ -122,65 +160,91 @@ class _RoomScreenState extends State<RoomScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Lobi', style: TextStyle(fontWeight: FontWeight.w800))),
       body: ListView(padding: const EdgeInsets.all(20), children: [
-        GestureDetector(
-          onTap: () {
-            Clipboard.setData(ClipboardData(text: room.code));
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kod kopyalandı')));
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              gradient: const LinearGradient(colors: [AppColors.pink, Color(0xFF8E2DE2)]),
+        Pop(
+          from: 0.8,
+          child: Pressable(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: room.code));
+              HapticFeedback.selectionClick();
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kod kopyalandı')));
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(28),
+                gradient: const LinearGradient(
+                  colors: [AppColors.pink, Color(0xFF8E2DE2)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [BoxShadow(color: AppColors.pink.withValues(alpha: 0.35), blurRadius: 30, offset: const Offset(0, 10))],
+              ),
+              child: Column(children: [
+                const Text('ODA KODU', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 3)),
+                Text(room.code, style: const TextStyle(fontSize: 64, fontWeight: FontWeight.w900, letterSpacing: 12)),
+                const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.copy, size: 14, color: Colors.white70),
+                  SizedBox(width: 6),
+                  Text('Dokun, kopyala, arkadaşlarına at', style: TextStyle(color: Colors.white70)),
+                ]),
+              ]),
             ),
-            child: Column(children: [
-              const Text('ODA KODU', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 3)),
-              Text(room.code, style: const TextStyle(fontSize: 64, fontWeight: FontWeight.w900, letterSpacing: 12)),
-              const Text('Arkadaşların bu kodla katılsın', style: TextStyle(color: Colors.white70)),
-            ]),
           ),
         ),
         const SizedBox(height: 24),
-        Text('OYUNCULAR (${players.length})',
-            style: const TextStyle(color: AppColors.muted, fontWeight: FontWeight.w800, letterSpacing: 2)),
+        Row(children: [
+          Text('OYUNCULAR (${players.length})',
+              style: const TextStyle(color: AppColors.muted, fontWeight: FontWeight.w800, letterSpacing: 2)),
+          const Spacer(),
+          if (players.length < Db.minPlayers)
+            Text('${Db.minPlayers - players.length} kişi daha', style: const TextStyle(color: AppColors.yellow)),
+        ]),
         const SizedBox(height: 10),
-        for (final p in players)
-          Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(16)),
-            child: Row(children: [
-              Avatar(name: p.name, url: p.avatar),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(p.name + (p.uid == room.host ? '  👑' : ''),
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-              ),
-              if (p.videoCount == 0)
-                const Text('TikTok yok', style: TextStyle(color: AppColors.yellow, fontSize: 13))
-              else
-                Text('${p.videoCount} video', style: const TextStyle(color: AppColors.muted)),
-            ]),
+        for (var i = 0; i < players.length; i++)
+          SlideIn(
+            key: ValueKey(players[i].uid),
+            delay: Duration(milliseconds: 60 * i),
+            child: _lobbyRow(room, players[i]),
           ),
         const SizedBox(height: 20),
         if (isHost) ...[
           const Text('SORU SAYISI', style: TextStyle(color: AppColors.muted, fontWeight: FontWeight.w800, letterSpacing: 2)),
           const SizedBox(height: 10),
-          SegmentedButton<int>(
-            segments: const [
-              ButtonSegment(value: 5, label: Text('5')),
-              ButtonSegment(value: 10, label: Text('10')),
-              ButtonSegment(value: 15, label: Text('15')),
-              ButtonSegment(value: 20, label: Text('20')),
-            ],
-            selected: {_questionCount},
-            onSelectionChanged: (s) => setState(() => _questionCount = s.first),
-          ),
+          Row(children: [
+            for (final n in const [5, 10, 15, 20])
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Pressable(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _questionCount = n);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      height: 52,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _questionCount == n ? AppColors.cyan : AppColors.card,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text('$n',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            color: _questionCount == n ? AppColors.bg : Colors.white,
+                          )),
+                    ),
+                  ),
+                ),
+              ),
+          ]),
           const SizedBox(height: 20),
-          FilledButton(
-            onPressed: !canStart || _starting
+          Pressable(
+            onTap: !canStart || _starting
                 ? null
                 : () async {
+                    HapticFeedback.mediumImpact();
                     setState(() => _starting = true);
                     try {
                       await Db.startGame(room, _questionCount);
@@ -193,11 +257,30 @@ class _RoomScreenState extends State<RoomScreen> {
                       if (mounted) setState(() => _starting = false);
                     }
                   },
-            child: Text(players.length < Db.minPlayers
-                ? 'En az ${Db.minPlayers} kişi gerekli'
-                : totalVideos == 0
-                    ? 'Kimsenin TikTok\'u bağlı değil'
-                    : 'Başlat'),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              height: 60,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                gradient: canStart ? const LinearGradient(colors: [AppColors.pink, Color(0xFFFF7A59)]) : null,
+                color: canStart ? null : AppColors.card,
+              ),
+              child: _starting
+                  ? const SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white))
+                  : Text(
+                      players.length < Db.minPlayers
+                          ? 'En az ${Db.minPlayers} kişi gerekli'
+                          : totalVideos == 0
+                              ? 'Kimsenin TikTok\'u bağlı değil'
+                              : 'BAŞLAT 🚀',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: canStart ? Colors.white : AppColors.muted,
+                      ),
+                    ),
+            ),
           ),
         ] else
           const Center(
@@ -210,52 +293,115 @@ class _RoomScreenState extends State<RoomScreen> {
     );
   }
 
+  Widget _lobbyRow(Room room, Player p) => Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: p.uid == _me ? AppColors.cardHi : AppColors.card,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(children: [
+          Avatar(name: p.name, url: p.avatar),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(p.name + (p.uid == room.host ? '  👑' : ''),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          ),
+          if (p.videoCount == 0)
+            const Text('TikTok yok', style: TextStyle(color: AppColors.yellow, fontSize: 13))
+          else
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.favorite, size: 14, color: AppColors.pink),
+              const SizedBox(width: 4),
+              Text('${p.videoCount}', style: const TextStyle(color: AppColors.muted, fontWeight: FontWeight.w700)),
+            ]),
+        ]),
+      );
+
   // ------------------------------------------------------------------ oyun
 
   Widget _game(Room room) {
     final q = room.current;
     if (q == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     final reveal = room.status == 'reveal';
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final total = (reveal ? Db.revealSeconds : Db.questionSeconds) * 1000;
-    final left = (room.deadline - now).clamp(0, total);
     final verb = q.kind == 'repost' ? 'repostladı' : 'beğendi';
+    final myScore = room.players[_me]?.score ?? 0;
+    if (reveal) _revealHaptics(room, q);
 
     return Scaffold(
       body: SafeArea(
         child: Column(children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
             child: Row(children: [
-              Text('${room.qi + 1}/${room.questions.length}',
-                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: LinearProgressIndicator(
-                    value: left / total,
-                    minHeight: 8,
-                    color: reveal ? AppColors.cyan : (left < 5000 ? AppColors.yellow : AppColors.pink),
-                    backgroundColor: AppColors.card,
-                  ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(20)),
+                child: Text('${room.qi + 1} / ${room.questions.length}',
+                    style: const TextStyle(fontWeight: FontWeight.w900)),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: (q.kind == 'repost' ? AppColors.cyan : AppColors.pink).withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(20),
                 ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(q.kind == 'repost' ? Icons.repeat : Icons.favorite,
+                      size: 14, color: q.kind == 'repost' ? AppColors.cyan : AppColors.pink),
+                  const SizedBox(width: 4),
+                  Text(q.kind == 'repost' ? 'REPOST' : 'BEĞENİ',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        color: q.kind == 'repost' ? AppColors.cyan : AppColors.pink,
+                      )),
+                ]),
+              ),
+              const Spacer(),
+              CountdownRing(
+                deadline: room.deadline,
+                totalMs: (reveal ? Db.revealSeconds : Db.questionSeconds) * 1000,
+                size: 46,
+                color: reveal ? AppColors.muted : null,
               ),
               const SizedBox(width: 12),
-              Text('${(left / 1000).ceil()}s', style: const TextStyle(fontWeight: FontWeight.w800)),
+              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                const Text('PUAN', style: TextStyle(fontSize: 10, color: AppColors.muted, fontWeight: FontWeight.w800)),
+                CountUp(value: myScore, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: AppColors.yellow)),
+              ]),
             ]),
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              child: Center(
-                child: AspectRatio(aspectRatio: 9 / 16, child: TikTokPlayer(videoId: q.video.id)),
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Stack(alignment: Alignment.center, children: [
+                Center(child: AspectRatio(aspectRatio: 9 / 16, child: TikTokPlayer(videoId: q.video.id))),
+                if (reveal && (room.lastGain[_me] ?? 0) > 0) ...[
+                  Positioned.fill(child: ConfettiBurst(key: ValueKey('c${room.qi}'))),
+                  FloatingGain(key: ValueKey('g${room.qi}'), text: '+${room.lastGain[_me]}'),
+                ],
+              ]),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-            child: reveal ? _revealPanel(room, q, verb) : _votePanel(room, q, verb),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 380),
+              switchInCurve: Curves.easeOutBack,
+              transitionBuilder: (child, a) => FadeTransition(
+                opacity: a,
+                child: SlideTransition(
+                  position: Tween(begin: const Offset(0, 0.25), end: Offset.zero).animate(a),
+                  child: child,
+                ),
+              ),
+              child: KeyedSubtree(
+                key: ValueKey('${room.status}${room.qi}'),
+                child: reveal ? _revealPanel(room, q, verb) : _votePanel(room, q, verb),
+              ),
+            ),
           ),
         ]),
       ),
@@ -263,52 +409,111 @@ class _RoomScreenState extends State<RoomScreen> {
   }
 
   Widget _votePanel(Room room, Question q, String verb) {
+    final voters = room.players.keys.where((u) => !q.owners.contains(u)).toList();
+    final votedCount = voters.where(room.votes.containsKey).length;
+    final progress = Text('$votedCount / ${voters.length} kişi oy verdi',
+        style: const TextStyle(color: AppColors.muted, fontSize: 13));
+
     if (q.owners.contains(_me)) {
-      return _banner('🤫 Bu senin videon!', 'Belli etme, herkes tahmin ediyor…', AppColors.yellow);
+      return Column(mainAxisSize: MainAxisSize.min, children: [
+        TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0.9, end: 1.05),
+          duration: const Duration(milliseconds: 900),
+          curve: Curves.easeInOut,
+          builder: (_, s, child) => Transform.scale(scale: s, child: child),
+          child: const Text('🤫', style: TextStyle(fontSize: 46)),
+        ),
+        const Text('Bu senin videon!', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: AppColors.yellow)),
+        const SizedBox(height: 2),
+        const Text('Belli etme, herkes tahmin ediyor…', style: TextStyle(color: AppColors.muted)),
+        const SizedBox(height: 8),
+        progress,
+      ]);
     }
+
     final myVote = room.votes[_me];
-    final players = room.players.values.where((p) => p.uid != _me).toList();
+    final options = room.players.values.where((p) => p.uid != _me).toList();
     return Column(mainAxisSize: MainAxisSize.min, children: [
-      Text('Bunu kim $verb?', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+      Text('Bunu kim $verb?', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+      const SizedBox(height: 12),
+      LayoutBuilder(builder: (context, c) {
+        final perRow = options.length <= 4 ? options.length.clamp(1, 4) : (options.length <= 6 ? 3 : 4);
+        final w = (c.maxWidth - (perRow - 1) * 10) / perRow;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          alignment: WrapAlignment.center,
+          children: [
+            for (var i = 0; i < options.length; i++)
+              SizedBox(
+                width: w,
+                child: Pop(
+                  delay: Duration(milliseconds: 50 * i),
+                  from: 0.6,
+                  child: _voteTile(
+                    options[i],
+                    selected: myVote == options[i].uid,
+                    dimmed: myVote != null && myVote != options[i].uid,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      Db.vote(room.code, options[i].uid);
+                    },
+                  ),
+                ),
+              ),
+          ],
+        );
+      }),
       const SizedBox(height: 10),
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        alignment: WrapAlignment.center,
-        children: [
-          for (final p in players)
-            _choice(
-              p,
-              selected: myVote == p.uid,
-              voted: room.votes.containsKey(p.uid),
-              onTap: () => Db.vote(room.code, p.uid),
-            ),
-        ],
-      ),
+      progress,
     ]);
   }
 
-  Widget _choice(Player p, {required bool selected, required bool voted, VoidCallback? onTap, Color? highlight}) {
-    final color = highlight ?? (selected ? AppColors.pink : AppColors.card);
-    return GestureDetector(
+  Widget _voteTile(Player p, {required bool selected, required bool dimmed, required VoidCallback onTap}) {
+    return Pressable(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.fromLTRB(6, 6, 14, 6),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: selected ? Colors.white : Colors.transparent, width: 2),
+      child: AnimatedScale(
+        scale: selected ? 1.06 : 1,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutBack,
+        child: AnimatedOpacity(
+          opacity: dimmed ? 0.45 : 1,
+          duration: const Duration(milliseconds: 200),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+            decoration: BoxDecoration(
+              color: selected ? null : AppColors.card,
+              gradient: selected ? const LinearGradient(colors: [AppColors.pink, Color(0xFFFF7A59)]) : null,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: selected
+                  ? [BoxShadow(color: AppColors.pink.withValues(alpha: 0.5), blurRadius: 20, offset: const Offset(0, 6))]
+                  : null,
+            ),
+            child: Column(children: [
+              Stack(clipBehavior: Clip.none, children: [
+                Avatar(name: p.name, url: p.avatar, size: 52),
+                if (selected)
+                  const Positioned(
+                    right: -4,
+                    bottom: -4,
+                    child: Pop(
+                      child: CircleAvatar(
+                        radius: 11,
+                        backgroundColor: Colors.white,
+                        child: Icon(Icons.check, size: 15, color: AppColors.pink),
+                      ),
+                    ),
+                  ),
+              ]),
+              const SizedBox(height: 6),
+              Text(p.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+            ]),
+          ),
         ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Avatar(name: p.name, url: p.avatar, size: 34),
-          const SizedBox(width: 8),
-          Text(p.name, style: const TextStyle(fontWeight: FontWeight.w800)),
-          if (voted && highlight == null) ...[
-            const SizedBox(width: 6),
-            const Icon(Icons.check_circle, size: 14, color: AppColors.green),
-          ],
-        ]),
       ),
     );
   }
@@ -324,105 +529,228 @@ class _RoomScreenState extends State<RoomScreen> {
     String title;
     Color color;
     if (iWasOwner) {
-      title = myGain > 0 ? 'Kandırdın! +$myGain' : 'Seni buldular 😅';
+      title = myGain > 0 ? 'KANDIRDIN! 😈' : 'SENİ BULDULAR 😅';
       color = myGain > 0 ? AppColors.green : AppColors.yellow;
     } else if (correct) {
-      title = 'Doğru! +$myGain';
+      title = 'DOĞRU! 🎯';
       color = AppColors.green;
     } else {
-      title = myVote == null ? 'Süre doldu' : 'Yanlış!';
+      title = myVote == null ? 'SÜRE DOLDU ⏰' : 'YANLIŞ! ❌';
       color = AppColors.pink;
     }
 
+    final ranking = room.ranking;
     return Column(mainAxisSize: MainAxisSize.min, children: [
-      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        for (final o in owners) Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 3),
-          child: Avatar(name: o.name, url: o.avatar, size: 44, ring: AppColors.green),
+      Shake(
+        enabled: !correct && !(iWasOwner && myGain > 0),
+        child: Pop(
+          from: 0.5,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(16)),
+            child: Text(title, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: color, letterSpacing: 0.5)),
+          ),
         ),
+      ),
+      const SizedBox(height: 12),
+      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        for (var i = 0; i < owners.length; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: Pop(
+              delay: Duration(milliseconds: 200 + 120 * i),
+              child: Avatar(name: owners[i].name, url: owners[i].avatar, size: 50, ring: AppColors.green),
+            ),
+          ),
         const SizedBox(width: 10),
         Flexible(
-          child: Text('$ownerNames $verb!',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900), overflow: TextOverflow.ellipsis),
+          child: SlideIn(
+            delay: const Duration(milliseconds: 250),
+            child: Text('$ownerNames $verb!',
+                style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis),
+          ),
         ),
       ]),
-      const SizedBox(height: 8),
-      Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: color)),
-      const SizedBox(height: 8),
-      Wrap(spacing: 6, runSpacing: 6, alignment: WrapAlignment.center, children: [
-        for (final e in room.votes.entries)
-          if (room.players[e.key] != null && !q.owners.contains(e.key))
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: q.owners.contains(e.value) ? AppColors.green.withValues(alpha: 0.2) : AppColors.card,
-                borderRadius: BorderRadius.circular(12),
+      const SizedBox(height: 12),
+      // Mini puan tablosu
+      SizedBox(
+        height: 64,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: ranking.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
+          itemBuilder: (context, i) {
+            final p = ranking[i];
+            final gain = room.lastGain[p.uid] ?? 0;
+            final vote = room.votes[p.uid];
+            final isOwner = q.owners.contains(p.uid);
+            final ok = vote != null && q.owners.contains(vote);
+            return SlideIn(
+              delay: Duration(milliseconds: 400 + 80 * i),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(6, 6, 12, 6),
+                decoration: BoxDecoration(
+                  color: p.uid == _me ? AppColors.cardHi : AppColors.card,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isOwner ? AppColors.green : (vote == null ? Colors.transparent : (ok ? AppColors.green : AppColors.pink).withValues(alpha: 0.6)),
+                    width: 1.5,
+                  ),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Avatar(name: p.name, url: p.avatar, size: 40),
+                  const SizedBox(width: 8),
+                  Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      CountUp(value: p.score, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                      if (gain > 0) ...[
+                        const SizedBox(width: 4),
+                        Pop(
+                          delay: Duration(milliseconds: 600 + 80 * i),
+                          child: Text('+$gain',
+                              style: const TextStyle(color: AppColors.green, fontWeight: FontWeight.w900, fontSize: 13)),
+                        ),
+                      ],
+                    ]),
+                    Text(
+                      isOwner
+                          ? 'sahibi'
+                          : vote == null
+                              ? 'oy yok'
+                              : '→ ${room.players[vote]?.name ?? '?'}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isOwner ? AppColors.green : (ok ? AppColors.green : AppColors.muted),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ]),
+                ]),
               ),
-              child: Text(
-                '${room.players[e.key]!.name} → ${room.players[e.value]?.name ?? '?'}',
-                style: const TextStyle(fontSize: 13),
-              ),
-            ),
-      ]),
+            );
+          },
+        ),
+      ),
     ]);
   }
-
-  Widget _banner(String title, String sub, Color c) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(color: c.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(18)),
-        child: Column(children: [
-          Text(title, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: c)),
-          const SizedBox(height: 4),
-          Text(sub, style: const TextStyle(color: AppColors.muted)),
-        ]),
-      );
 
   // ------------------------------------------------------------------ son
 
   Widget _end(Room room) {
     final ranking = room.ranking;
     final isHost = room.host == _me;
-    const medals = ['🥇', '🥈', '🥉'];
+    final iWon = ranking.isNotEmpty && ranking.first.uid == _me;
     return Scaffold(
       appBar: AppBar(title: const Text('Sonuçlar', style: TextStyle(fontWeight: FontWeight.w900))),
-      body: ListView(padding: const EdgeInsets.all(20), children: [
-        if (ranking.isNotEmpty) ...[
-          Center(child: Avatar(name: ranking.first.name, url: ranking.first.avatar, size: 110, ring: AppColors.yellow)),
-          const SizedBox(height: 12),
-          Center(
-            child: Text('${ranking.first.name} kazandı!',
-                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
-          ),
-          const SizedBox(height: 24),
-        ],
-        for (var i = 0; i < ranking.length; i++)
-          Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: ranking[i].uid == _me ? AppColors.cardHi : AppColors.card,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(children: [
-              SizedBox(
-                width: 36,
-                child: Text(i < 3 ? medals[i] : '${i + 1}.',
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+      body: Stack(children: [
+        ListView(padding: const EdgeInsets.all(20), children: [
+          if (ranking.isNotEmpty) ...[
+            Center(
+              child: Pop(
+                child: Text(iWon ? 'KAZANDIN! 🏆' : '${ranking.first.name} kazandı! 🏆',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
               ),
-              Avatar(name: ranking[i].name, url: ranking[i].avatar, size: 40),
-              const SizedBox(width: 12),
-              Expanded(child: Text(ranking[i].name, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700))),
-              Text('${ranking[i].score}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: AppColors.cyan)),
-            ]),
+            ),
+            const SizedBox(height: 20),
+            _podium(ranking),
+            const SizedBox(height: 20),
+          ],
+          for (var i = 3; i < ranking.length; i++)
+            SlideIn(
+              delay: Duration(milliseconds: 1200 + 80 * (i - 3)),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: ranking[i].uid == _me ? AppColors.cardHi : AppColors.card,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(children: [
+                  SizedBox(width: 36, child: Text('${i + 1}.', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900))),
+                  Avatar(name: ranking[i].name, url: ranking[i].avatar, size: 40),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(ranking[i].name, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700))),
+                  CountUp(
+                    value: ranking[i].score,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: AppColors.cyan),
+                  ),
+                ]),
+              ),
+            ),
+          const SizedBox(height: 20),
+          if (isHost)
+            FilledButton(
+              onPressed: () {
+                HapticFeedback.mediumImpact();
+                Db.backToLobby(room.code);
+              },
+              child: const Text('Tekrar oyna'),
+            )
+          else
+            const Center(child: Text('Oda sahibi yeni oyun başlatabilir', style: TextStyle(color: AppColors.muted))),
+          const SizedBox(height: 12),
+          OutlinedButton(onPressed: () => Navigator.of(context).maybePop(), child: const Text('Odadan çık')),
+        ]),
+        const Positioned.fill(child: ConfettiBurst(count: 120)),
+      ]),
+    );
+  }
+
+  Widget _podium(List<Player> ranking) {
+    // Sıra: 2. - 1. - 3.
+    const heights = [150.0, 110.0, 80.0];
+    const medals = ['🥇', '🥈', '🥉'];
+    const colors = [AppColors.yellow, Color(0xFFC0C0D0), Color(0xFFCD8B5A)];
+    final order = [1, 0, 2].where((i) => i < ranking.length).toList();
+    return SizedBox(
+      height: 290,
+      child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+        for (final i in order)
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              child: Column(mainAxisAlignment: MainAxisAlignment.end, children: [
+                Pop(
+                  delay: Duration(milliseconds: 500 + (2 - i) * 250),
+                  child: Avatar(name: ranking[i].name, url: ranking[i].avatar, size: i == 0 ? 72 : 56, ring: colors[i]),
+                ),
+                const SizedBox(height: 6),
+                Text(ranking[i].name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: heights[i]),
+                  duration: Duration(milliseconds: 700 + (2 - i) * 250),
+                  curve: Curves.easeOutBack,
+                  builder: (context, h, _) => Container(
+                    height: h,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [colors[i], colors[i].withValues(alpha: 0.35)],
+                      ),
+                    ),
+                    alignment: Alignment.topCenter,
+                    padding: const EdgeInsets.only(top: 8),
+                    child: h < 40
+                        ? null
+                        : Column(children: [
+                            Text(medals[i], style: const TextStyle(fontSize: 26)),
+                            CountUp(
+                              value: ranking[i].score,
+                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.bg),
+                            ),
+                          ]),
+                  ),
+                ),
+              ]),
+            ),
           ),
-        const SizedBox(height: 20),
-        if (isHost)
-          FilledButton(onPressed: () => Db.backToLobby(room.code), child: const Text('Tekrar oyna'))
-        else
-          const Center(child: Text('Oda sahibi yeni oyun başlatabilir', style: TextStyle(color: AppColors.muted))),
-        const SizedBox(height: 12),
-        OutlinedButton(onPressed: () => Navigator.of(context).maybePop(), child: const Text('Odadan çık')),
       ]),
     );
   }
